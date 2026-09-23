@@ -1,10 +1,16 @@
+
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+def utc_now() -> datetime:
+    """Return the current timezone-aware UTC timestamp."""
+    return datetime.now(UTC)
 
 
 class ActionType(StrEnum):
@@ -139,7 +145,9 @@ class NextBestAction(BaseModel):
 
     investigation_id: str | None = None
 
-    created_at: datetime
+    created_at: datetime = Field(
+        default_factory=utc_now,
+    )
 
 
 class ApprovalRequest(BaseModel):
@@ -165,7 +173,9 @@ class ApprovalRequest(BaseModel):
         min_length=1,
     )
 
-    requested_at: datetime
+    requested_at: datetime = Field(
+        default_factory=utc_now,
+    )
 
     reviewed_by: str | None = None
 
@@ -205,7 +215,9 @@ class ActionExecutionResult(BaseModel):
         default_factory=dict,
     )
 
-    executed_at: datetime | None = None
+    executed_at: datetime | None = Field(
+        default_factory=utc_now,
+    )
 
 
 class ActionPlan(BaseModel):
@@ -220,3 +232,4 @@ class ActionPlan(BaseModel):
     explanation: str | None = None
 
     requires_human_approval: bool = True
+
