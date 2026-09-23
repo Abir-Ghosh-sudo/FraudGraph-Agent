@@ -1,0 +1,4 @@
+Produce a clear, evidence-grounded explanation of this fraud investigation's findings and recommended action.
+
+Cite only the evidence IDs listed. Do not invent transactions, customers, policy references, or regulatory requirements.
+Clearly distinguish between direct observations and inferences. Express uncertainty where evidence is limited.

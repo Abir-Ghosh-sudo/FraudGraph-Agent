@@ -1,0 +1,6 @@
+CREATE QUERY get_transaction(VERTEX<Transaction> txn_id) FOR GRAPH FraudGraph {
+    Start = {txn_id};
+    Related = SELECT t FROM Start:s -(:e)- :t;
+    PRINT Start;
+    PRINT Related;
+}

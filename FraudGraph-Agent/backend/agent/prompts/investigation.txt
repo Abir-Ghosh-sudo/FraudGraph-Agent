@@ -1,0 +1,4 @@
+Summarize the graph investigation results for the target entity.
+
+Report only what the graph data explicitly shows. Do not infer fraud from graph connections alone.
+Graph relationships indicate connections — they do not establish fraud intent by themselves.

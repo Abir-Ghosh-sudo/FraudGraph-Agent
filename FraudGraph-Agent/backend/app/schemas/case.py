@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.schemas.investigation import RiskLevel
+
+
+def utc_now() -> datetime:
+    """Return the current timezone-aware UTC timestamp."""
+    return datetime.now(UTC)
 
 
 class CaseStatus(StrEnum):
@@ -45,6 +50,7 @@ class CaseFinding(BaseModel):
 
     title: str = Field(
         min_length=1,
+        max_length=300,
     )
 
     description: str = Field(
@@ -61,7 +67,9 @@ class CaseFinding(BaseModel):
         le=1.0,
     )
 
-    created_at: datetime
+    created_at: datetime = Field(
+        default_factory=utc_now,
+    )
 
 
 class CaseDecision(BaseModel):
@@ -85,7 +93,9 @@ class CaseDecision(BaseModel):
 
     approved_by: str | None = None
 
-    created_at: datetime
+    created_at: datetime = Field(
+        default_factory=utc_now,
+    )
 
 
 class CaseAction(BaseModel):
@@ -112,7 +122,9 @@ class CaseAction(BaseModel):
         default_factory=dict,
     )
 
-    created_at: datetime
+    created_at: datetime = Field(
+        default_factory=utc_now,
+    )
 
     completed_at: datetime | None = None
 
@@ -189,7 +201,10 @@ class Case(BaseModel):
 
     account_id: str | None = None
 
-    title: str
+    title: str = Field(
+        min_length=1,
+        max_length=300,
+    )
 
     description: str | None = None
 
@@ -231,9 +246,13 @@ class Case(BaseModel):
         default_factory=list,
     )
 
-    created_at: datetime
+    created_at: datetime = Field(
+        default_factory=utc_now,
+    )
 
-    updated_at: datetime
+    updated_at: datetime = Field(
+        default_factory=utc_now,
+    )
 
     resolved_at: datetime | None = None
 

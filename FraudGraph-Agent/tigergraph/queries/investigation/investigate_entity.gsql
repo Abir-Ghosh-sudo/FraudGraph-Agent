@@ -1,0 +1,19 @@
+CREATE QUERY investigate_entity(VERTEX root, INT max_depth = 2) FOR GRAPH FraudGraph {
+    SetAccum<VERTEX> @@visited;
+    SetAccum<EDGE> @@edges;
+
+    Start = {root};
+    Current = Start;
+    @@visited += root;
+
+    WHILE Current.size() > 0 AND max_depth > 0 DO
+        Current = SELECT t
+                  FROM Current:s -( :e)- :t
+                  WHERE NOT @@visited.contains(t)
+                  ACCUM @@edges += e, @@visited += t;
+        max_depth = max_depth - 1;
+    END;
+
+    PRINT @@visited AS nodes;
+    PRINT @@edges AS links;
+}

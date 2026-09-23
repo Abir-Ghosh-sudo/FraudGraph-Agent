@@ -1,0 +1,4 @@
+Assess the risk level for this fraud investigation based solely on the evidence and patterns provided.
+
+Do not invent new evidence. Do not assume fraud without supporting evidence.
+Base your risk score only on what is explicitly listed below.

@@ -4,138 +4,22 @@ from typing import Literal
 
 from langgraph.graph import END, START, StateGraph
 
-from backend.agent.state import AgentRuntimeState, is_step_limit_reached
+from backend.agent.nodes.approval import ApprovalNode
+from backend.agent.nodes.assess_risk import AssessRiskNode
+from backend.agent.nodes.assess_uncertainty import AssessUncertaintyNode
+from backend.agent.nodes.detect_patterns import DetectPatternsNode
+from backend.agent.nodes.execute_action import ExecuteActionNode
+from backend.agent.nodes.explain import ExplainNode
+from backend.agent.nodes.gather_evidence import GatherEvidenceNode
+from backend.agent.nodes.investigate import InvestigationNode
+from backend.agent.nodes.reassess import ReassessNode
+from backend.agent.nodes.recommend_action import RecommendActionNode
+from backend.agent.nodes.request_evidence import RequestEvidenceNode
+from backend.agent.nodes.trigger import TriggerNode
+from backend.agent.nodes.update_memory import UpdateMemoryNode
+from backend.agent.state import AgentRuntimeState
+from backend.app.config import Settings
 from backend.app.schemas.agent import AgentStage
-
-
-def _advance(
-    state: AgentRuntimeState,
-    stage: AgentStage,
-) -> AgentRuntimeState:
-    from backend.agent.state import advance_state
-
-    return advance_state(state, stage)
-
-
-def trigger_node(
-    state: AgentRuntimeState,
-) -> AgentRuntimeState:
-    return _advance(
-        state,
-        AgentStage.INVESTIGATE,
-    )
-
-
-def investigate_node(
-    state: AgentRuntimeState,
-) -> AgentRuntimeState:
-    return _advance(
-        state,
-        AgentStage.GATHER_EVIDENCE,
-    )
-
-
-def gather_evidence_node(
-    state: AgentRuntimeState,
-) -> AgentRuntimeState:
-    return _advance(
-        state,
-        AgentStage.DETECT_PATTERNS,
-    )
-
-
-def detect_patterns_node(
-    state: AgentRuntimeState,
-) -> AgentRuntimeState:
-    return _advance(
-        state,
-        AgentStage.ASSESS_RISK,
-    )
-
-
-def assess_risk_node(
-    state: AgentRuntimeState,
-) -> AgentRuntimeState:
-    return _advance(
-        state,
-        AgentStage.ASSESS_UNCERTAINTY,
-    )
-
-
-def assess_uncertainty_node(
-    state: AgentRuntimeState,
-) -> AgentRuntimeState:
-    if is_step_limit_reached(state):
-        return _advance(
-            state,
-            AgentStage.EXPLAIN,
-        )
-
-    assessment = state.get("assessment")
-
-    if assessment is not None and (
-        assessment.uncertainty is not None
-        and assessment.uncertainty
-        > 0.40
-    ):
-        return _advance(
-            state,
-            AgentStage.REQUEST_EVIDENCE,
-        )
-
-    return _advance(
-        state,
-        AgentStage.RECOMMEND_ACTION,
-    )
-
-
-def request_evidence_node(
-    state: AgentRuntimeState,
-) -> AgentRuntimeState:
-    return _advance(
-        state,
-        AgentStage.REASSESS,
-    )
-
-
-def reassess_node(
-    state: AgentRuntimeState,
-) -> AgentRuntimeState:
-    return _advance(
-        state,
-        AgentStage.ASSESS_RISK,
-    )
-
-
-def recommend_action_node(
-    state: AgentRuntimeState,
-) -> AgentRuntimeState:
-    return _advance(
-        state,
-        AgentStage.EXPLAIN,
-    )
-
-
-def explain_node(
-    state: AgentRuntimeState,
-) -> AgentRuntimeState:
-    return _advance(
-        state,
-        AgentStage.UPDATE_MEMORY,
-    )
-
-
-def update_memory_node(
-    state: AgentRuntimeState,
-) -> AgentRuntimeState:
-    updated = _advance(
-        state,
-        AgentStage.COMPLETE,
-    )
-
-    updated["completed_at"] = updated["updated_at"]
-
-    return updated
 
 
 def route_after_uncertainty(
@@ -156,93 +40,44 @@ def route_after_uncertainty(
     return "recommend_action"
 
 
-def build_workflow() -> StateGraph:
+def build_workflow(settings: Settings | None = None) -> StateGraph:
+    if settings is None:
+        settings = Settings()
+
+    trigger_node = TriggerNode(settings=settings)
+    investigation_node = InvestigationNode(settings=settings)
+    gather_evidence_node = GatherEvidenceNode(settings=settings)
+    detect_patterns_node = DetectPatternsNode(settings=settings)
+    assess_risk_node = AssessRiskNode(settings=settings)
+    assess_uncertainty_node = AssessUncertaintyNode(settings=settings)
+    request_evidence_node = RequestEvidenceNode(settings=settings)
+    reassess_node = ReassessNode(settings=settings)
+    recommend_action_node = RecommendActionNode(settings=settings)
+    approval_node = ApprovalNode(settings=settings)
+    explain_node = ExplainNode(settings=settings)
+    update_memory_node = UpdateMemoryNode(settings=settings)
+
     graph = StateGraph(AgentRuntimeState)
 
-    graph.add_node(
-        "trigger",
-        trigger_node,
-    )
+    graph.add_node("trigger", trigger_node.run)
+    graph.add_node("investigate", investigation_node.run)
+    graph.add_node("gather_evidence", gather_evidence_node.run)
+    graph.add_node("detect_patterns", detect_patterns_node.run)
+    graph.add_node("assess_risk", assess_risk_node.run)
+    graph.add_node("assess_uncertainty", assess_uncertainty_node.run)
+    graph.add_node("request_evidence", request_evidence_node.run)
+    graph.add_node("reassess", reassess_node.run)
+    graph.add_node("recommend_action", recommend_action_node.run)
+    graph.add_node("approval", approval_node.run)
+    graph.add_node("explain", explain_node.run)
+    graph.add_node("update_memory", update_memory_node.run)
 
-    graph.add_node(
-        "investigate",
-        investigate_node,
-    )
-
-    graph.add_node(
-        "gather_evidence",
-        gather_evidence_node,
-    )
-
-    graph.add_node(
-        "detect_patterns",
-        detect_patterns_node,
-    )
-
-    graph.add_node(
-        "assess_risk",
-        assess_risk_node,
-    )
-
-    graph.add_node(
-        "assess_uncertainty",
-        assess_uncertainty_node,
-    )
-
-    graph.add_node(
-        "request_evidence",
-        request_evidence_node,
-    )
-
-    graph.add_node(
-        "reassess",
-        reassess_node,
-    )
-
-    graph.add_node(
-        "recommend_action",
-        recommend_action_node,
-    )
-
-    graph.add_node(
-        "explain",
-        explain_node,
-    )
-
-    graph.add_node(
-        "update_memory",
-        update_memory_node,
-    )
-
-    graph.add_edge(
-        START,
-        "trigger",
-    )
-
-    graph.add_edge(
-        "trigger",
-        "investigate",
-    )
-
-    graph.add_edge(
-        "investigate",
-        "gather_evidence",
-    )
-
-    graph.add_edge(
-        "gather_evidence",
-        "detect_patterns",
-    )
-
-    graph.add_edge(
-        "detect_patterns",
-        "assess_risk",
-    )
-
-    graph.add_edge(
-        "assess_risk",
-        "assess_uncertainty",
-    )
+    graph.add_edge(START, "trigger")
+    graph.add_edge("trigger", "investigate")
+    graph.add_edge("investigate", "gather_evidence")
+    graph.add_edge("gather_evidence", "detect_patterns")
+    graph.add_edge("detect_patterns", "assess_risk")
+    graph.add_edge("assess_risk", "assess_uncertainty")
 
     graph.add_conditional_edges(
         "assess_uncertainty",
@@ -254,33 +89,16 @@ def build_workflow() -> StateGraph:
         },
     )
 
-    graph.add_edge(
-        "request_evidence",
-        "reassess",
-    )
+    graph.add_edge("request_evidence", "reassess")
+    graph.add_edge("reassess", "assess_risk")
 
-    graph.add_edge(
-        "reassess",
-        "assess_risk",
-    )
-
-    graph.add_edge(
-        "recommend_action",
-        "explain",
-    )
-
-    graph.add_edge(
-        "explain",
-        "update_memory",
-    )
-
-    graph.add_edge(
-        "update_memory",
-        END,
-    )
+    graph.add_edge("recommend_action", "approval")
+    graph.add_edge("approval", "explain")
+    graph.add_edge("explain", "update_memory")
+    graph.add_edge("update_memory", END)
 
     return graph
 
 
-def compile_workflow():
-    return build_workflow().compile()
+def compile_workflow(settings: Settings | None = None):
+    return build_workflow(settings).compile()

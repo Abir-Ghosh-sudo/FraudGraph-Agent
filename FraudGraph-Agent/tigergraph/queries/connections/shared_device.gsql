@@ -1,0 +1,8 @@
+CREATE QUERY shared_device(VERTEX<Device> dev_id) FOR GRAPH FraudGraph {
+    Start = {dev_id};
+    Txns = SELECT t FROM Start:s -(DEVICE_OF_TXN:e)- Transaction:t;
+    Customers = SELECT c FROM Start:s -(USED_BY_CUSTOMER:e)- Customer:c;
+    PRINT Start;
+    PRINT Txns;
+    PRINT Customers;
+}

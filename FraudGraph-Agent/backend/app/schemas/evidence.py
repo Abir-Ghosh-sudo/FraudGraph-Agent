@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -109,9 +109,13 @@ class Evidence(BaseModel):
         default_factory=dict,
     )
 
-    collected_at: datetime
+    collected_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+    )
 
-    created_at: datetime
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+    )
 
 
 class EvidenceCreate(BaseModel):

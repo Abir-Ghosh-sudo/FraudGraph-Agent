@@ -19,7 +19,7 @@ from backend.app.schemas.investigation import (
 class FraudInvestigationAgent:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self._workflow = compile_workflow()
+        self._workflow = compile_workflow(settings)
         self._states: dict[str, AgentRuntimeState] = {}
         self._lock = RLock()
 
@@ -55,7 +55,10 @@ class FraudInvestigationAgent:
         investigation_id: str,
         trigger: dict[str, Any],
     ) -> AgentRuntimeState:
-        return self.start(
+        import asyncio
+
+        return await asyncio.to_thread(
+            self.start,
             investigation_id=investigation_id,
             trigger=trigger,
         )
@@ -115,7 +118,13 @@ class FraudInvestigationAgent:
         state = dict(result)
 
         state["investigation_id"] = investigation_id
-        state["status"] = InvestigationStatus.COMPLETED
+        current_status = state.get("status")
+        if current_status not in (
+            InvestigationStatus.AWAITING_APPROVAL,
+            InvestigationStatus.AWAITING_EVIDENCE,
+        ):
+            state["status"] = InvestigationStatus.COMPLETED
+
         state["current_stage"] = AgentStage.COMPLETE
         state["updated_at"] = datetime.now(UTC)
 
@@ -123,15 +132,18 @@ class FraudInvestigationAgent:
             state["completed_at"] = state["updated_at"]
 
         events = list(state.get("events", []))
-
-        events.append(
-            self._event(
-                state=state,
-                event_type=AgentEventType.INVESTIGATION_COMPLETED,
-                stage=AgentStage.COMPLETE,
-                message="Fraud investigation workflow completed.",
+        if not any(
+            getattr(e, "event_type", "") == AgentEventType.INVESTIGATION_COMPLETED
+            for e in events
+        ):
+            events.append(
+                self._event(
+                    state=state,
+                    event_type=AgentEventType.INVESTIGATION_COMPLETED,
+                    stage=AgentStage.COMPLETE,
+                    message="Fraud investigation workflow completed.",
+                )
             )
-        )
 
         state["events"] = events
 

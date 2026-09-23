@@ -1,0 +1,4 @@
+CREATE QUERY get_case_history(INT limit_count = 50) FOR GRAPH FraudGraph {
+    Cases = SELECT c FROM Case:c LIMIT limit_count;
+    PRINT Cases;
+}

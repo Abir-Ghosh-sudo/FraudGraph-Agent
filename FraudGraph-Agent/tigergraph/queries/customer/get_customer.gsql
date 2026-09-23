@@ -1,0 +1,6 @@
+CREATE QUERY get_customer(VERTEX<Customer> cust_id) FOR GRAPH FraudGraph {
+    Start = {cust_id};
+    Related = SELECT t FROM Start:s -(:e)- :t;
+    PRINT Start;
+    PRINT Related;
+}

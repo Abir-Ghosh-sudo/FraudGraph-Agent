@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from backend.app.dependencies import get_evidence_service
+from backend.app.errors import EvidenceNotFoundError
 from backend.app.schemas.evidence import (
     Evidence,
     EvidenceCreate,
 )
-
+from backend.app.services.evidence import EvidenceService
 
 router = APIRouter(
     prefix="/evidence",
@@ -21,11 +23,26 @@ router = APIRouter(
 )
 async def create_evidence(
     payload: EvidenceCreate,
+    investigation_id: str | None = Query(None),
+    service: EvidenceService = Depends(get_evidence_service),
 ) -> Evidence:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Evidence persistence service is not configured yet.",
-    )
+    return service.create(payload, investigation_id=investigation_id)
+
+
+@router.get(
+    "",
+    response_model=list[Evidence],
+)
+async def list_evidence(
+    investigation_id: str | None = Query(None),
+    case_id: str | None = Query(None),
+    service: EvidenceService = Depends(get_evidence_service),
+) -> list[Evidence]:
+    if investigation_id:
+        return service.list_for_investigation(investigation_id)
+    if case_id:
+        return service.list_for_case(case_id)
+    return service.list_all()
 
 
 @router.get(
@@ -34,11 +51,15 @@ async def create_evidence(
 )
 async def get_evidence(
     evidence_id: str,
+    service: EvidenceService = Depends(get_evidence_service),
 ) -> Evidence:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Evidence persistence service is not configured yet.",
-    )
+    try:
+        return service.get(evidence_id)
+    except EvidenceNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Evidence '{evidence_id}' not found.",
+        )
 
 
 @router.get(
@@ -47,11 +68,9 @@ async def get_evidence(
 )
 async def list_case_evidence(
     case_id: str,
+    service: EvidenceService = Depends(get_evidence_service),
 ) -> list[Evidence]:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Evidence persistence service is not configured yet.",
-    )
+    return service.list_for_case(case_id)
 
 
 @router.get(
@@ -60,8 +79,6 @@ async def list_case_evidence(
 )
 async def list_investigation_evidence(
     investigation_id: str,
+    service: EvidenceService = Depends(get_evidence_service),
 ) -> list[Evidence]:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Evidence persistence service is not configured yet.",
-    )
+    return service.list_for_investigation(investigation_id)

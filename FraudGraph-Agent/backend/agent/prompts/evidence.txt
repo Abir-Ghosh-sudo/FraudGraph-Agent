@@ -1,0 +1,4 @@
+Evaluate the collected evidence for this fraud investigation.
+
+For each piece of evidence, assess its strength, reliability, and relevance to the investigation target.
+Only reference evidence that is explicitly listed. Do not invent supporting facts.

@@ -1,0 +1,6 @@
+CREATE QUERY shared_ip(VERTEX<IP> ip_id) FOR GRAPH FraudGraph {
+    Start = {ip_id};
+    Txns = SELECT t FROM Start:s -(IP_OF_TXN:e)- Transaction:t;
+    PRINT Start;
+    PRINT Txns;
+}

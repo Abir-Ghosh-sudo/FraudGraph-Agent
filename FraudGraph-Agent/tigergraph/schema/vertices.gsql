@@ -1,0 +1,9 @@
+CREATE VERTEX Customer(PRIMARY_ID id STRING, customer_type STRING, country STRING, region STRING, risk_score DOUBLE, status STRING) WITH STATS="OUTDEGREE_BY_EDGETYPE";
+CREATE VERTEX Transaction(PRIMARY_ID id STRING, amount DOUBLE, currency STRING, transaction_timestamp DATETIME, fraud_risk_score DOUBLE, country STRING, region STRING, ip_address STRING, transaction_type STRING, status STRING) WITH STATS="OUTDEGREE_BY_EDGETYPE";
+CREATE VERTEX Device(PRIMARY_ID id STRING, device_type STRING, os STRING, browser STRING, risk_score DOUBLE, is_known_proxy BOOL) WITH STATS="OUTDEGREE_BY_EDGETYPE";
+CREATE VERTEX IP(PRIMARY_ID id STRING, ip_address STRING, country STRING, isp STRING, risk_score DOUBLE, is_vpn BOOL, is_tor BOOL) WITH STATS="OUTDEGREE_BY_EDGETYPE";
+CREATE VERTEX Merchant(PRIMARY_ID id STRING, name STRING, category STRING, country STRING, risk_score DOUBLE) WITH STATS="OUTDEGREE_BY_EDGETYPE";
+CREATE VERTEX Card(PRIMARY_ID id STRING, card_type STRING, card_brand STRING, exp_month INT, exp_year INT, is_blocked BOOL) WITH STATS="OUTDEGREE_BY_EDGETYPE";
+CREATE VERTEX Address(PRIMARY_ID id STRING, street STRING, city STRING, state STRING, postal_code STRING, country STRING) WITH STATS="OUTDEGREE_BY_EDGETYPE";
+CREATE VERTEX Case(PRIMARY_ID id STRING, case_status STRING, outcome STRING, risk_level STRING, created_at DATETIME) WITH STATS="OUTDEGREE_BY_EDGETYPE";
+CREATE VERTEX FraudPattern(PRIMARY_ID id STRING, pattern_type STRING, severity STRING, description STRING, confidence DOUBLE) WITH STATS="OUTDEGREE_BY_EDGETYPE";

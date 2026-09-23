@@ -1,0 +1,35 @@
+Metadata-Version: 2.4
+Name: fraudgraph-agent
+Version: 0.1.0
+Summary: Agentic fraud investigation system powered by TigerGraph and GraphRAG
+Requires-Python: <3.14,>=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: fastapi<1.0,>=0.115
+Requires-Dist: uvicorn[standard]<1.0,>=0.30
+Requires-Dist: pydantic<3.0,>=2.9
+Requires-Dist: pydantic-settings<3.0,>=2.6
+Requires-Dist: httpx<1.0,>=0.27
+Requires-Dist: anyio<5.0,>=4.6
+Requires-Dist: python-dotenv<2.0,>=1.0
+Requires-Dist: pandas<3.0,>=2.2
+Requires-Dist: numpy<3.0,>=2.0
+Requires-Dist: pyarrow<22.0,>=17.0
+Requires-Dist: pyTigerGraph<2.0,>=1.8
+Requires-Dist: langgraph<1.0,>=0.2
+Requires-Dist: langchain-core<1.0,>=0.3
+Requires-Dist: networkx<4.0,>=3.3
+Requires-Dist: pypdf<7.0,>=5.0
+Requires-Dist: structlog<26.0,>=24.4
+Requires-Dist: tenacity<10.0,>=9.0
+Requires-Dist: uuid6>=2024.7.10
+Requires-Dist: PyJWT<3.0,>=2.9
+Requires-Dist: pwdlib[argon2]<1.0,>=0.2
+Provides-Extra: dev
+Requires-Dist: pytest<9.0,>=8.3; extra == "dev"
+Requires-Dist: pytest-asyncio<1.0,>=0.24; extra == "dev"
+Requires-Dist: pytest-cov<7.0,>=5.0; extra == "dev"
+Requires-Dist: ruff<1.0,>=0.8; extra == "dev"
+Requires-Dist: mypy<2.0,>=1.13; extra == "dev"
+Requires-Dist: pre-commit<5.0,>=4.0; extra == "dev"
+Dynamic: license-file
