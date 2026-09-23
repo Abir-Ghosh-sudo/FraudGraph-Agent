@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+def utc_now() -> datetime:
+    """Return the current timezone-aware UTC timestamp."""
+    return datetime.now(UTC)
 
 
 class InvestigationTriggerType(StrEnum):
@@ -36,31 +41,38 @@ class InvestigationTrigger(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     trigger_type: InvestigationTriggerType
+
     transaction_id: str | None = Field(
         default=None,
         min_length=1,
     )
+
     customer_id: str | None = Field(
         default=None,
         min_length=1,
     )
+
     account_id: str | None = Field(
         default=None,
         min_length=1,
     )
+
     risk_score: float | None = Field(
         default=None,
         ge=0.0,
         le=1.0,
     )
+
     reason: str | None = Field(
         default=None,
         min_length=1,
     )
+
     requested_by: str | None = Field(
         default=None,
         min_length=1,
     )
+
     metadata: dict[str, Any] = Field(
         default_factory=dict,
     )
@@ -77,7 +89,9 @@ class InvestigationCreate(BaseModel):
         le=100,
     )
 
-    requested_at: datetime | None = None
+    requested_at: datetime = Field(
+        default_factory=utc_now,
+    )
 
 
 class InvestigationProgress(BaseModel):
@@ -179,8 +193,12 @@ class Investigation(BaseModel):
 
     case_id: str | None = None
 
-    created_at: datetime
+    created_at: datetime = Field(
+        default_factory=utc_now,
+    )
 
-    updated_at: datetime
+    updated_at: datetime = Field(
+        default_factory=utc_now,
+    )
 
     completed_at: datetime | None = None
