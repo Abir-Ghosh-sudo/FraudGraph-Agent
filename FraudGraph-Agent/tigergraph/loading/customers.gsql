@@ -1,0 +1,21 @@
+/*
+ * HHGOA customer vertex loading job.
+ *
+ * Input:
+ *   customers.jsonl
+ *
+ * Expected JSON:
+ *   {"customer_id": "customer_123"}
+ */
+
+CREATE LOADING JOB load_hhgoa_customers FOR GRAPH FraudGraph {
+    DEFINE FILENAME customer_file;
+
+    LOAD customer_file
+        TO VERTEX Customer
+        VALUES (
+            $"customer_id"
+        )
+        USING
+            JSON_FILE="true";
+}

@@ -1,0 +1,38 @@
+/*
+ * HHGOA IP vertex loading job.
+ *
+ * Input:
+ *   connections.jsonl
+ *
+ * Produced by:
+ *   scripts/dataset/prepare_graph_data.py
+ *
+ * Expected JSON:
+ * {
+ *   "connection_id": "ip:192.168.1.10",
+ *   "connection_type": "IP",
+ *   "value": "192.168.1.10"
+ * }
+ *
+ * Graph schema:
+ *   IP(
+ *       PRIMARY_ID id STRING,
+ *       ip_address STRING,
+ *       country STRING,
+ *       isp STRING,
+ *       risk_score DOUBLE,
+ *       is_vpn BOOL,
+ *       is_tor BOOL
+ *   )
+ */
+
+CREATE LOADING JOB load_hhgoa_ips FOR GRAPH FraudGraph {
+    DEFINE FILENAME ip_file;
+
+    LOAD ip_file
+        TO VERTEX IP VALUES (
+            $"connection_id",
+            $"value"
+        )
+        USING JSON_FILE="true";
+}

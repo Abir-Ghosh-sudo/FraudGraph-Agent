@@ -1,0 +1,21 @@
+/*
+ * HHGOA device vertex loading job.
+ *
+ * Input:
+ *   devices.jsonl
+ *
+ * Expected JSON:
+ *   {"device_id": "device_123"}
+ */
+
+CREATE LOADING JOB load_hhgoa_devices FOR GRAPH FraudGraph {
+    DEFINE FILENAME device_file;
+
+    LOAD device_file
+        TO VERTEX Device
+        VALUES (
+            $"device_id"
+        )
+        USING
+            JSON_FILE="true";
+}

@@ -1,0 +1,37 @@
+/*
+ * HHGOA transaction vertex loading job.
+ *
+ * Source:
+ *   transactions.jsonl
+ *
+ * Transaction schema:
+ *   id
+ *   amount
+ *   currency
+ *   transaction_timestamp
+ *   fraud_risk_score
+ *   country
+ *   region
+ *   ip_address
+ *   transaction_type
+ *   status
+ */
+
+CREATE LOADING JOB load_hhgoa_transactions FOR GRAPH FraudGraph {
+    DEFINE FILENAME transaction_file;
+
+    LOAD transaction_file
+        TO VERTEX Transaction VALUES (
+            $"transaction_id",
+            $"amount",
+            $"currency",
+            $"transaction_timestamp",
+            $"fraud_risk_score",
+            $"country",
+            $"region",
+            $"ip_address",
+            $"transaction_type",
+            $"status"
+        )
+        USING JSON_FILE="true";
+}
