@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, TypedDict
 
-from backend.app.schemas.action import ActionPlan, ApprovalRequest, NextBestAction
+from backend.app.schemas.action import (
+    ActionPlan,
+    ApprovalRequest,
+    NextBestAction,
+)
 from backend.app.schemas.agent import (
     AgentDecision,
     AgentEvent,
@@ -17,6 +21,11 @@ from backend.app.schemas.investigation import (
     InvestigationAssessment,
     InvestigationStatus,
 )
+
+
+def utc_now() -> datetime:
+    """Return the current timezone-aware UTC timestamp."""
+    return datetime.now(UTC)
 
 
 class AgentRuntimeState(TypedDict, total=False):
@@ -64,7 +73,8 @@ def create_initial_state(
     trigger: dict[str, Any],
     max_steps: int,
 ) -> AgentRuntimeState:
-    now = datetime.now()
+    """Create the initial runtime state for an investigation."""
+    now = utc_now()
 
     return {
         "investigation_id": investigation_id,
@@ -72,8 +82,8 @@ def create_initial_state(
         "status": InvestigationStatus.PENDING,
         "current_stage": AgentStage.TRIGGER,
         "step": 0,
-        "max_steps": max_steps,
-        "trigger": trigger,
+        "max_steps": max(1, max_steps),
+        "trigger": dict(trigger),
         "graph": None,
         "evidence": [],
         "evidence_requests": [],
@@ -100,9 +110,11 @@ def advance_state(
     *,
     message: str | None = None,
 ) -> AgentRuntimeState:
-    now = datetime.now()
+    """Advance the investigation to the next agent stage."""
+    now = utc_now()
 
-    updated = dict(state)
+    updated: AgentRuntimeState = dict(state)
+
     updated["current_stage"] = stage
     updated["step"] = state.get("step", 0) + 1
     updated["updated_at"] = now
@@ -119,12 +131,14 @@ def add_error(
     state: AgentRuntimeState,
     error: str,
 ) -> AgentRuntimeState:
-    updated = dict(state)
-    updated["errors"] = [
-        *state.get("errors", []),
-        error,
-    ]
-    updated["updated_at"] = datetime.now()
+    """Add an error without mutating the existing state."""
+    updated: AgentRuntimeState = dict(state)
+
+    errors = list(state.get("errors", []))
+    errors.append(error)
+
+    updated["errors"] = errors
+    updated["updated_at"] = utc_now()
 
     return updated
 
@@ -132,4 +146,5 @@ def add_error(
 def is_step_limit_reached(
     state: AgentRuntimeState,
 ) -> bool:
+    """Return whether the investigation reached its configured step limit."""
     return state.get("step", 0) >= state.get("max_steps", 20)

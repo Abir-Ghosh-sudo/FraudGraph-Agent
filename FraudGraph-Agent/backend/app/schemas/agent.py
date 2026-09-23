@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -14,13 +14,18 @@ from backend.app.schemas.investigation import (
 )
 
 
+def utc_now() -> datetime:
+    """Return the current timezone-aware UTC timestamp."""
+    return datetime.now(UTC)
+
+
 class AgentStage(StrEnum):
     TRIGGER = "trigger"
     INVESTIGATE = "investigate"
     GATHER_EVIDENCE = "gather_evidence"
     DETECT_PATTERNS = "detect_patterns"
     ASSESS_RISK = "assess_risk"
-    ASSESS_UNCERTAINTY = "assess_uncertainty"
+    ASSESS_UNCERTAINTY = "assess_uncERTAINTY"
     REQUEST_EVIDENCE = "request_evidence"
     REASSESS = "reassess"
     RECOMMEND_ACTION = "recommend_action"
@@ -69,7 +74,9 @@ class EvidenceRequest(BaseModel):
 
     approval_route: str | None = None
 
-    created_at: datetime
+    created_at: datetime = Field(
+        default_factory=utc_now,
+    )
 
 
 class AgentDecision(BaseModel):
@@ -93,7 +100,9 @@ class AgentDecision(BaseModel):
         le=1.0,
     )
 
-    created_at: datetime
+    created_at: datetime = Field(
+        default_factory=utc_now,
+    )
 
 
 class AgentExplanation(BaseModel):
@@ -133,13 +142,17 @@ class AgentEvent(BaseModel):
 
     stage: AgentStage
 
-    message: str
+    message: str = Field(
+        min_length=1,
+    )
 
     payload: dict[str, Any] = Field(
         default_factory=dict,
     )
 
-    created_at: datetime
+    created_at: datetime = Field(
+        default_factory=utc_now,
+    )
 
 
 class AgentState(BaseModel):
