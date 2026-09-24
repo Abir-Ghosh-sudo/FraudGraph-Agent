@@ -272,9 +272,14 @@ class AssessUncertaintyNode:
             updated
         )
 
+        metadata = updated.get("metadata", {})
+        reassess_count = int(metadata.get("reassess_count") or 0)
+        max_reassessments = getattr(self.settings, "agent_max_reassessments", 1)
+
         if (
             calculated_uncertainty > threshold
             and not step_limit_reached
+            and reassess_count < max_reassessments
         ):
             updated["current_stage"] = (
                 AgentStage.REQUEST_EVIDENCE

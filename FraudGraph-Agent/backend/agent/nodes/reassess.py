@@ -221,9 +221,10 @@ class ReassessNode:
             *existing,
             *additional,
         ]:
-            evidence_id = str(
-                item.evidence_id
-            )
+            if isinstance(item, dict):
+                evidence_id = str(item.get("evidence_id") or "")
+            else:
+                evidence_id = str(getattr(item, "evidence_id", ""))
 
             if evidence_id in seen_ids:
                 continue

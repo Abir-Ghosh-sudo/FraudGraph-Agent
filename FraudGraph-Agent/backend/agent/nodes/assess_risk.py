@@ -589,3 +589,5 @@ class AssessRiskNode:
 
     def __call__(self, state):
         return assess_risk(state)
+    def run(self, state):
+        return assess_risk(state)

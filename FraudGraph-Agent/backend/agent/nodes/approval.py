@@ -23,16 +23,45 @@ class ApprovalNode:
         updated = advance_state(state, AgentStage.APPROVAL)
 
         selected_action = updated.get("selected_action")
-        if not selected_action or not selected_action.requires_approval:
+        if not selected_action:
             return updated
+
+        requires_approval = (
+            selected_action.get("requires_approval")
+            if isinstance(selected_action, dict)
+            else getattr(selected_action, "requires_approval", False)
+        )
+        if not requires_approval:
+            return updated
+
+        action_id = (
+            selected_action.get("action_id")
+            if isinstance(selected_action, dict)
+            else getattr(selected_action, "action_id", "")
+        )
+        title = (
+            selected_action.get("title")
+            if isinstance(selected_action, dict)
+            else getattr(selected_action, "title", "Recommended Action")
+        )
+        route = (
+            selected_action.get("approval_route")
+            if isinstance(selected_action, dict)
+            else getattr(selected_action, "approval_route", ApprovalRoute.ANALYST)
+        ) or ApprovalRoute.ANALYST
+        evidence_ids = (
+            selected_action.get("evidence_ids", [])
+            if isinstance(selected_action, dict)
+            else getattr(selected_action, "evidence_ids", [])
+        )
 
         approval = ApprovalRequest(
             approval_id=f"appr_{uuid4().hex[:12]}",
-            action_id=selected_action.action_id,
-            route=selected_action.approval_route or ApprovalRoute.ANALYST,
+            action_id=action_id,
+            route=route,
             status=ApprovalStatus.PENDING,
-            reason=f"Action '{selected_action.title}' requires authorization per risk policy.",
-            evidence_ids=selected_action.evidence_ids,
+            reason=f"Action '{title}' requires authorization per risk policy.",
+            evidence_ids=evidence_ids,
             requested_by="FraudGraph-Agent",
             requested_at=datetime.now(UTC),
         )

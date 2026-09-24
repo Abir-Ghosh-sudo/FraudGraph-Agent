@@ -475,3 +475,12 @@ def investigate(state: dict[str, Any]) -> dict[str, Any]:
 
 def run(state: dict[str, Any]) -> dict[str, Any]:
     return investigate(state)
+class InvestigationNode:
+    def __init__(self, settings=None):
+        self.settings = settings
+
+    def __call__(self, state):
+        return investigate(state)
+
+    def run(self, state):
+        return investigate(state)

@@ -634,3 +634,12 @@ def gather_evidence(
 
 def run(state: dict[str, Any]) -> dict[str, Any]:
     return gather_evidence(state)
+class GatherEvidenceNode:
+    def __init__(self, settings=None):
+        self.settings = settings
+
+    def __call__(self, state):
+        return gather_evidence(state)
+
+    def run(self, state):
+        return gather_evidence(state)

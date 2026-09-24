@@ -60,12 +60,23 @@ def route_after_approval(
     if selected_action is None:
         return "explain"
 
-    if not selected_action.requires_approval:
+    requires_approval = (
+        selected_action.get("requires_approval")
+        if isinstance(selected_action, dict)
+        else getattr(selected_action, "requires_approval", False)
+    )
+
+    if not requires_approval:
         return "execute_action"
 
     approval = state.get("approval")
+    approval_status = (
+        approval.get("status")
+        if isinstance(approval, dict)
+        else getattr(approval, "status", None)
+    )
 
-    if approval is not None and approval.status == ApprovalStatus.APPROVED:
+    if approval is not None and approval_status == ApprovalStatus.APPROVED:
         return "execute_action"
 
     return "explain"

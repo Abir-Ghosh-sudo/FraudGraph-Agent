@@ -171,6 +171,15 @@ class Settings(BaseSettings):
             and self.llm_base_url
         )
 
+
+    @property
+    def llm_enabled(self) -> bool:
+        return self.llm_configured
+
+    @property
+    def agent_max_reassessments(self) -> int:
+        return 1
+
     @property
     def embeddings_configured(self) -> bool:
         return bool(

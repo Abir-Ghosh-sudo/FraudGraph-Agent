@@ -478,3 +478,12 @@ def run(
     state: dict[str, Any],
 ) -> dict[str, Any]:
     return detect_patterns(state)
+class DetectPatternsNode:
+    def __init__(self, settings=None):
+        self.settings = settings
+
+    def __call__(self, state):
+        return detect_patterns(state)
+
+    def run(self, state):
+        return detect_patterns(state)
