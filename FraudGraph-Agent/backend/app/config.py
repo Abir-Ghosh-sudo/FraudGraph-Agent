@@ -201,7 +201,16 @@ class Settings(BaseSettings):
                 parents=True,
                 exist_ok=True,
             )
+    # ------------------------------------------------------------------
+    # Fraud ML model
+    # ------------------------------------------------------------------
 
+    fraud_model_path: Path = PROJECT_ROOT / "models" / "fraud_model.joblib"
+    fraud_model_metadata_path: Path = (
+        PROJECT_ROOT / "models" / "fraud_model_metadata.json"
+    )
+    fraud_model_threshold: float = 0.50
+    fraud_model_enabled: bool = True
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

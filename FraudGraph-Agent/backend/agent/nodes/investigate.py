@@ -1,418 +1,477 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
-from backend.agent.state import AgentRuntimeState, add_error, advance_state
-from backend.app.config import Settings
-from backend.app.schemas.agent import AgentStage
-from backend.app.schemas.graph import InvestigationSubgraph
-from backend.app.services.graph import GraphService
-from backend.tigergraph.client import TigerGraphError
-from backend.tigergraph.query_runner import QueryRegistryError
+from backend.ml.transaction_loader import TransactionRecordLoader
 
 
-def utc_now() -> datetime:
-    """Return the current timezone-aware UTC timestamp."""
-    return datetime.now(UTC)
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
-class InvestigationNodeError(RuntimeError):
-    """Raised when graph-backed investigation cannot proceed."""
+def _clean_id(value: Any) -> str | None:
+    if value is None:
+        return None
+
+    value = str(value).strip()
+
+    if not value:
+        return None
+
+    if value.endswith(".0"):
+        value = value[:-2]
+
+    return value
 
 
-class InvestigationNode:
-    """Run the graph-backed investigation stage."""
+def _transaction_id_from_state(
+    state: dict[str, Any],
+) -> str | None:
+    candidates = (
+        state.get("transaction_id"),
+        state.get("flagged_txn_id"),
+    )
 
-    def __init__(
-        self,
-        settings: Settings,
-        graph_service: GraphService | None = None,
-    ) -> None:
-        self.settings = settings
-        self.graph_service = graph_service or GraphService(
-            settings=settings,
+    transaction = state.get("transaction")
+
+    if isinstance(transaction, dict):
+        candidates += (
+            transaction.get("TransactionID"),
+            transaction.get("transaction_id"),
         )
 
-    def run(
-        self,
-        state: AgentRuntimeState,
-    ) -> AgentRuntimeState:
-        """Execute graph-backed investigation."""
-        updated = advance_state(
-            state,
-            AgentStage.INVESTIGATE,
+    trigger = state.get("trigger")
+
+    if isinstance(trigger, dict):
+        candidates += (
+            trigger.get("transaction_id"),
+            trigger.get("flagged_txn_id"),
         )
 
-        metadata = dict(
-            updated.get("metadata", {}),
-        )
+    for candidate in candidates:
+        cleaned = _clean_id(candidate)
 
-        metadata["graph_status"] = "starting"
-        updated["metadata"] = metadata
+        if cleaned:
+            return cleaned
 
-        if not self.graph_service.is_configured():
-            return self._handle_unavailable_graph(
-                updated,
-            )
+    return None
 
-        target = self._resolve_target(updated)
 
-        if target is None:
-            return self._handle_missing_target(
-                updated,
-            )
+def _safe_float(value: Any) -> float | None:
+    if value is None:
+        return None
 
-        query_name = self._resolve_query(updated)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
-        if query_name is None:
-            return self._handle_missing_query(
-                updated,
-            )
 
-        parameters = self._build_parameters(
-            updated,
-            target,
-        )
+def _build_transaction_evidence(
+    transaction: dict[str, Any],
+) -> list[dict[str, Any]]:
+    transaction_id = _clean_id(
+        transaction.get("TransactionID")
+        or transaction.get("transaction_id")
+    )
 
-        try:
-            subgraph = self.graph_service.investigation(
-                root_node_id=target["node_id"],
-                query_name=query_name,
-                parameters=parameters,
-                depth=self._resolve_depth(updated),
-                limit=self._resolve_limit(updated),
-            )
+    if not transaction_id:
+        return []
 
-        except (
-            QueryRegistryError,
-            TigerGraphError,
-            ValueError,
-            RuntimeError,
-        ) as exc:
-            return self._handle_graph_error(
-                updated,
-                exc,
-            )
+    evidence: list[dict[str, Any]] = []
 
-        if subgraph is None:
-            return self._handle_graph_error(
-                updated,
-                InvestigationNodeError(
-                    "TigerGraph returned no investigation subgraph.",
+    risk_score = _safe_float(
+        transaction.get("risk_score")
+    )
+
+    if risk_score is not None:
+        evidence.append(
+            {
+                "evidence_id": (
+                    f"txn-risk-{transaction_id}"
                 ),
-            )
-
-        return self._apply_subgraph(
-            updated,
-            subgraph=subgraph,
-            query_name=query_name,
-            target=target,
-        )
-
-    def _resolve_target(
-        self,
-        state: AgentRuntimeState,
-    ) -> dict[str, str] | None:
-        """Resolve the graph root entity from the investigation trigger."""
-        trigger = state.get("trigger", {})
-
-        if not isinstance(trigger, dict):
-            return None
-
-        trigger_metadata = trigger.get("metadata")
-
-        if not isinstance(trigger_metadata, dict):
-            trigger_metadata = {}
-
-        explicit_type = (
-            trigger_metadata.get("target_type")
-            or trigger_metadata.get("node_type")
-        )
-
-        candidates = (
-            ("transaction_id", "transaction"),
-            ("customer_id", "customer"),
-            ("account_id", "account"),
-        )
-
-        for field_name, inferred_type in candidates:
-            value = trigger.get(field_name)
-
-            if value:
-                return {
-                    "node_id": str(value),
-                    "node_type": str(
-                        explicit_type or inferred_type,
-                    ),
-                }
-
-        metadata_node_id = trigger_metadata.get(
-            "node_id",
-        )
-
-        if metadata_node_id:
-            return {
-                "node_id": str(metadata_node_id),
-                "node_type": str(
-                    explicit_type or "unknown",
+                "source_type": "TRANSACTION",
+                "evidence_type": "DIRECT",
+                "title": "Bank transaction risk score",
+                "description": (
+                    f"Bank fraud model risk score for transaction "
+                    f"{transaction_id} is {risk_score:.4f}."
                 ),
+                "data": {
+                    "transaction_id": transaction_id,
+                    "risk_score": risk_score,
+                },
+                "confidence": 0.60,
             }
-
-        return None
-
-    def _resolve_query(
-        self,
-        state: AgentRuntimeState,
-    ) -> str | None:
-        """Resolve the configured TigerGraph investigation query."""
-        trigger = state.get("trigger", {})
-
-        if not isinstance(trigger, dict):
-            trigger = {}
-
-        trigger_metadata = trigger.get("metadata")
-
-        if not isinstance(trigger_metadata, dict):
-            trigger_metadata = {}
-
-        query_name = trigger_metadata.get(
-            "investigation_query",
         )
 
-        if query_name:
-            return str(query_name)
+    amount = _safe_float(
+        transaction.get("TransactionAmt")
+        or transaction.get("transaction_amount")
+    )
 
-        configured_query = getattr(
-            self.settings,
-            "tigergraph_investigation_query",
-            "",
+    if amount is not None:
+        evidence.append(
+            {
+                "evidence_id": (
+                    f"txn-amount-{transaction_id}"
+                ),
+                "source_type": "TRANSACTION",
+                "evidence_type": "DIRECT",
+                "title": "Transaction amount",
+                "description": (
+                    f"Transaction amount is {amount:.2f}."
+                ),
+                "data": {
+                    "transaction_id": transaction_id,
+                    "amount": amount,
+                },
+                "confidence": 0.95,
+            }
         )
 
-        if configured_query:
-            return str(configured_query)
+    channel = transaction.get("channel")
 
-        return None
-
-    @staticmethod
-    def _build_parameters(
-        state: AgentRuntimeState,
-        target: dict[str, str],
-    ) -> dict[str, Any]:
-        """Build safe query parameters for TigerGraph."""
-        trigger = state.get("trigger", {})
-
-        if not isinstance(trigger, dict):
-            trigger = {}
-
-        trigger_metadata = trigger.get("metadata")
-
-        parameters: dict[str, Any] = {}
-
-        if isinstance(trigger_metadata, dict):
-            configured = trigger_metadata.get(
-                "query_parameters",
-            )
-
-            if isinstance(configured, dict):
-                parameters.update(configured)
-
-        parameters.setdefault(
-            "node_id",
-            target["node_id"],
+    if channel:
+        evidence.append(
+            {
+                "evidence_id": (
+                    f"txn-channel-{transaction_id}"
+                ),
+                "source_type": "TRANSACTION",
+                "evidence_type": "CONTEXTUAL",
+                "title": "Transaction channel",
+                "description": (
+                    f"Transaction channel is {channel}."
+                ),
+                "data": {
+                    "transaction_id": transaction_id,
+                    "channel": channel,
+                },
+                "confidence": 0.90,
+            }
         )
 
-        parameters.setdefault(
-            "root_node_id",
-            target["node_id"],
+    timestamp = transaction.get("ts")
+
+    if timestamp:
+        evidence.append(
+            {
+                "evidence_id": (
+                    f"txn-time-{transaction_id}"
+                ),
+                "source_type": "TRANSACTION",
+                "evidence_type": "DIRECT",
+                "title": "Transaction timestamp",
+                "description": (
+                    f"Transaction occurred at {timestamp}."
+                ),
+                "data": {
+                    "transaction_id": transaction_id,
+                    "timestamp": timestamp,
+                },
+                "confidence": 0.95,
+            }
         )
 
-        return parameters
+    return evidence
 
-    @staticmethod
-    def _resolve_depth(
-        state: AgentRuntimeState,
-    ) -> int:
-        """Resolve and bound graph traversal depth."""
-        metadata = state.get("metadata", {})
 
-        if not isinstance(metadata, dict):
-            metadata = {}
+def _build_identity_evidence(
+    transaction: dict[str, Any],
+) -> list[dict[str, Any]]:
+    transaction_id = _clean_id(
+        transaction.get("TransactionID")
+        or transaction.get("transaction_id")
+    )
 
-        value = metadata.get(
-            "graph_depth",
-            2,
+    if not transaction_id:
+        return []
+
+    evidence: list[dict[str, Any]] = []
+
+    device_type = transaction.get("DeviceType")
+
+    if device_type:
+        evidence.append(
+            {
+                "evidence_id": (
+                    f"device-type-{transaction_id}"
+                ),
+                "source_type": "DEVICE",
+                "evidence_type": "DIRECT",
+                "title": "Device type",
+                "description": (
+                    f"Transaction {transaction_id} is associated "
+                    f"with device type {device_type}."
+                ),
+                "data": {
+                    "transaction_id": transaction_id,
+                    "device_type": device_type,
+                },
+                "confidence": 0.90,
+            }
         )
 
-        try:
-            depth = int(value)
-        except (TypeError, ValueError):
-            depth = 2
+    device_info = transaction.get("DeviceInfo")
 
-        return max(0, min(depth, 10))
-
-    @staticmethod
-    def _resolve_limit(
-        state: AgentRuntimeState,
-    ) -> int:
-        """Resolve and bound graph result size."""
-        metadata = state.get("metadata", {})
-
-        if not isinstance(metadata, dict):
-            metadata = {}
-
-        value = metadata.get(
-            "graph_limit",
-            100,
+    if device_info:
+        evidence.append(
+            {
+                "evidence_id": (
+                    f"device-info-{transaction_id}"
+                ),
+                "source_type": "DEVICE",
+                "evidence_type": "DIRECT",
+                "title": "Device information",
+                "description": (
+                    f"Device information is available for "
+                    f"transaction {transaction_id}."
+                ),
+                "data": {
+                    "transaction_id": transaction_id,
+                    "device_info": str(device_info),
+                },
+                "confidence": 0.85,
+            }
         )
 
-        try:
-            limit = int(value)
-        except (TypeError, ValueError):
-            limit = 100
+    return evidence
 
-        return max(1, min(limit, 1000))
 
-    @staticmethod
-    def _apply_subgraph(
-        state: AgentRuntimeState,
-        *,
-        subgraph: InvestigationSubgraph,
-        query_name: str,
-        target: dict[str, str],
-    ) -> AgentRuntimeState:
-        """Store the investigation subgraph in runtime state."""
-        now = utc_now()
+def _build_customer_context(
+    state: dict[str, Any],
+    transaction: dict[str, Any],
+) -> dict[str, Any]:
+    customer_id = _clean_id(
+        state.get("customer_id")
+        or transaction.get("customer_id")
+    )
 
-        updated = dict(state)
+    card_id = _clean_id(
+        state.get("card_id")
+        or transaction.get("card_id")
+    )
 
-        updated["graph"] = subgraph
-        updated["updated_at"] = now
+    context: dict[str, Any] = {}
 
-        metadata = dict(
-            state.get("metadata", {}),
+    if customer_id:
+        context["customer_id"] = customer_id
+
+    if card_id:
+        context["card_id"] = card_id
+
+    return context
+
+
+def investigate(state: dict[str, Any]) -> dict[str, Any]:
+    """
+    Load the actual transaction and establish the initial investigation
+    context.
+
+    Important:
+    - flagged_txn_id is an investigation starting point, not a fraud label.
+    - No fraud verdict is produced here.
+    - ML prediction is intentionally left to assess_risk.py.
+    - Graph/pattern investigation happens in later stages.
+    """
+
+    result = dict(state)
+
+    transaction_id = _transaction_id_from_state(state)
+
+    now = _utc_now()
+
+    result["current_stage"] = "INVESTIGATE"
+    result["status"] = "INVESTIGATING"
+
+    if not transaction_id:
+        result["error"] = (
+            "Investigation cannot start because no transaction ID "
+            "was supplied."
         )
 
-        metadata["graph_status"] = "completed"
+        result["warnings"] = [
+            *list(result.get("warnings") or []),
+            "Missing transaction identifier.",
+        ]
 
-        metadata["graph_investigation"] = {
-            "query_name": query_name,
-            "root_node_id": target["node_id"],
-            "root_node_type": target["node_type"],
-            "node_count": subgraph.node_count,
-            "edge_count": subgraph.edge_count,
-            "depth": subgraph.depth,
-            "collected_at": now.isoformat(),
+        return result
+
+    result["transaction_id"] = transaction_id
+    result["flagged_txn_id"] = transaction_id
+
+    loader = TransactionRecordLoader(
+        transactions_path="data/raw/transactions.csv",
+        identity_path="data/raw/identity.csv",
+    )
+
+    transaction: dict[str, Any] | None = None
+
+    try:
+        transaction = loader.get_transaction(
+            transaction_id
+        )
+    except Exception as exc:
+        result["error"] = (
+            f"Failed to load transaction {transaction_id}: "
+            f"{exc}"
+        )
+
+        result["warnings"] = [
+            *list(result.get("warnings") or []),
+            "Transaction lookup failed.",
+        ]
+
+        return result
+
+    if not transaction:
+        result["error"] = (
+            f"Transaction {transaction_id} was not found "
+            "in the transaction dataset."
+        )
+
+        result["warnings"] = [
+            *list(result.get("warnings") or []),
+            f"Transaction {transaction_id} not found.",
+        ]
+
+        return result
+
+    result["transaction"] = transaction
+
+    # ------------------------------------------------------------------
+    # Synchronise primary identifiers from the actual transaction.
+    # Existing explicit state values take precedence.
+    # ------------------------------------------------------------------
+    if not result.get("customer_id"):
+        customer_id = _clean_id(
+            transaction.get("customer_id")
+        )
+
+        if customer_id:
+            result["customer_id"] = customer_id
+
+    if not result.get("card_id"):
+        card_id = _clean_id(
+            transaction.get("card_id")
+        )
+
+        if card_id:
+            result["card_id"] = card_id
+
+    # ------------------------------------------------------------------
+    # Preserve the bank-provided risk score as an input signal.
+    # It is NOT treated as ground truth.
+    # ------------------------------------------------------------------
+    bank_risk_score = _safe_float(
+        transaction.get("risk_score")
+    )
+
+    if bank_risk_score is not None:
+        result["bank_risk_score"] = max(
+            0.0,
+            min(1.0, bank_risk_score),
+        )
+
+    # ------------------------------------------------------------------
+    # Initial transaction + identity evidence.
+    # ------------------------------------------------------------------
+    transaction_evidence = _build_transaction_evidence(
+        transaction
+    )
+
+    identity_evidence = _build_identity_evidence(
+        transaction
+    )
+
+    new_evidence = [
+        *transaction_evidence,
+        *identity_evidence,
+    ]
+
+    existing_evidence = list(
+        result.get("evidence") or []
+    )
+
+    existing_ids = {
+        str(item.get("evidence_id"))
+        for item in existing_evidence
+        if isinstance(item, dict)
+        and item.get("evidence_id") is not None
+    }
+
+    for item in new_evidence:
+        evidence_id = str(
+            item.get("evidence_id")
+        )
+
+        if evidence_id not in existing_ids:
+            existing_evidence.append(item)
+            existing_ids.add(evidence_id)
+
+    result["evidence"] = existing_evidence
+    result["evidence_ids"] = [
+        str(item["evidence_id"])
+        for item in existing_evidence
+        if isinstance(item, dict)
+        and item.get("evidence_id") is not None
+    ]
+
+    # ------------------------------------------------------------------
+    # Customer/card context for downstream graph and evidence stages.
+    # ------------------------------------------------------------------
+    result["investigation_context"] = _build_customer_context(
+        state,
+        transaction,
+    )
+
+    # ------------------------------------------------------------------
+    # Event
+    # ------------------------------------------------------------------
+    events = list(result.get("events") or [])
+
+    events.append(
+        {
+            "event_id": (
+                f"investigate-{transaction_id}-{now}"
+            ),
+            "event_type": "STAGE_STARTED",
+            "investigation_id": result.get(
+                "investigation_id"
+            ),
+            "case_id": result.get("case_id"),
+            "stage": "INVESTIGATE",
+            "message": (
+                f"Loaded transaction {transaction_id} and "
+                "established investigation context."
+            ),
+            "payload": {
+                "transaction_id": transaction_id,
+                "customer_id": result.get("customer_id"),
+                "card_id": result.get("card_id"),
+                "bank_risk_score": result.get(
+                    "bank_risk_score"
+                ),
+                "evidence_count": len(new_evidence),
+            },
+            "created_at": now,
         }
+    )
 
-        updated["metadata"] = metadata
+    result["events"] = events
 
-        return updated
+    # ------------------------------------------------------------------
+    # Progress
+    # ------------------------------------------------------------------
+    result["progress"] = max(
+        float(result.get("progress") or 0.0),
+        0.20,
+    )
 
-    @staticmethod
-    def _handle_unavailable_graph(
-        state: AgentRuntimeState,
-    ) -> AgentRuntimeState:
-        """Handle an unavailable TigerGraph connection."""
-        updated = dict(state)
-
-        updated = add_error(
-            updated,
-            (
-                "TigerGraph is not configured; "
-                "graph investigation could not run."
-            ),
-        )
-
-        metadata = dict(
-            updated.get("metadata", {}),
-        )
-
-        metadata["graph_status"] = "unavailable"
-        metadata["graph_investigation_completed"] = False
-
-        updated["metadata"] = metadata
-        updated["updated_at"] = utc_now()
-
-        return updated
-
-    @staticmethod
-    def _handle_missing_target(
-        state: AgentRuntimeState,
-    ) -> AgentRuntimeState:
-        """Handle a trigger without a graph investigation target."""
-        updated = add_error(
-            state,
-            (
-                "Investigation trigger does not contain "
-                "a graph investigation target."
-            ),
-        )
-
-        metadata = dict(
-            updated.get("metadata", {}),
-        )
-
-        metadata["graph_status"] = "target_missing"
-        metadata["graph_investigation_completed"] = False
-
-        updated["metadata"] = metadata
-
-        return updated
-
-    @staticmethod
-    def _handle_missing_query(
-        state: AgentRuntimeState,
-    ) -> AgentRuntimeState:
-        """Handle a missing TigerGraph investigation query."""
-        updated = add_error(
-            state,
-            (
-                "No TigerGraph investigation query was configured "
-                "for this investigation."
-            ),
-        )
-
-        metadata = dict(
-            updated.get("metadata", {}),
-        )
-
-        metadata["graph_status"] = "query_not_configured"
-        metadata["graph_investigation_completed"] = False
-
-        updated["metadata"] = metadata
-
-        return updated
-
-    @staticmethod
-    def _handle_graph_error(
-        state: AgentRuntimeState,
-        error: Exception,
-    ) -> AgentRuntimeState:
-        """Handle graph investigation failures consistently."""
-        updated = add_error(
-            state,
-            f"Graph investigation failed: {error}",
-        )
-
-        metadata = dict(
-            updated.get("metadata", {}),
-        )
-
-        metadata["graph_status"] = "error"
-        metadata["graph_investigation_completed"] = False
-        metadata["graph_error_type"] = type(error).__name__
-
-        updated["metadata"] = metadata
-
-        return updated
+    return result
 
 
-def investigate_node(
-    state: AgentRuntimeState,
-    settings: Settings,
-) -> AgentRuntimeState:
-    """Functional wrapper for the investigation node."""
-    return InvestigationNode(
-        settings=settings,
-    ).run(state)
+def run(state: dict[str, Any]) -> dict[str, Any]:
+    return investigate(state)

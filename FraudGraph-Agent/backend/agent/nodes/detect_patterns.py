@@ -1,445 +1,480 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
-from uuid import uuid4
 
-from backend.agent.state import AgentRuntimeState, advance_state
-from backend.app.config import Settings
-from backend.app.logging import get_logger
-from backend.app.schemas.agent import AgentEventType, AgentStage
-from backend.app.schemas.evidence import Evidence, EvidenceType
-
-logger = get_logger(__name__)
+from backend.fraud.detector import FraudDetector
 
 
-def _utc_now() -> datetime:
-    return datetime.now(UTC)
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
-def _make_event(
-    state: AgentRuntimeState,
-    message: str,
-    payload: dict[str, Any] | None = None,
+def _as_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+
+    if hasattr(value, "__dict__"):
+        return dict(value.__dict__)
+
+    result: dict[str, Any] = {}
+
+    for name in (
+        "pattern",
+        "pattern_name",
+        "name",
+        "fraud_type",
+        "score",
+        "confidence",
+        "probability",
+        "description",
+        "evidence_ids",
+        "evidence",
+        "metadata",
+    ):
+        if hasattr(value, name):
+            result[name] = getattr(value, name)
+
+    return result
+
+
+def _normalise_finding(
+    finding: Any,
+    index: int,
 ) -> dict[str, Any]:
+    data = _as_dict(finding)
+
+    pattern = (
+        data.get("pattern")
+        or data.get("pattern_name")
+        or data.get("name")
+        or data.get("fraud_type")
+        or "unknown_pattern"
+    )
+
+    score = data.get("score")
+
+    if score is None:
+        score = data.get("confidence")
+
+    if score is None:
+        score = data.get("probability")
+
+    try:
+        score = float(score) if score is not None else 0.0
+    except (TypeError, ValueError):
+        score = 0.0
+
+    score = max(0.0, min(1.0, score))
+
+    evidence_ids = data.get("evidence_ids") or []
+
+    if not isinstance(evidence_ids, list):
+        evidence_ids = [str(evidence_ids)]
+
+    evidence_ids = [
+        str(item)
+        for item in evidence_ids
+        if item is not None
+    ]
+
+    description = (
+        data.get("description")
+        or data.get("rationale")
+        or data.get("message")
+        or f"Pattern {pattern} was detected."
+    )
+
     return {
-        "event_id": f"evt_{uuid4().hex[:8]}",
-        "event_type": AgentEventType.PATTERN_DETECTED,
-        "investigation_id": state.get("investigation_id", ""),
-        "case_id": state.get("case_id"),
-        "stage": AgentStage.DETECT_PATTERNS,
-        "message": message,
-        "payload": payload or {},
-        "created_at": _utc_now(),
+        "finding_id": str(
+            data.get("finding_id")
+            or f"pattern-{index + 1}-{pattern}"
+        ),
+        "pattern": str(pattern),
+        "score": score,
+        "confidence": score,
+        "description": str(description),
+        "evidence_ids": evidence_ids,
+        "metadata": (
+            data.get("metadata")
+            if isinstance(data.get("metadata"), dict)
+            else {}
+        ),
+        "raw": data,
     }
 
 
-class DetectPatternsNode:
+def _run_detector(
+    detector: Any,
+    *,
+    transaction: dict[str, Any],
+    evidence: list[dict[str, Any]],
+    state: dict[str, Any],
+) -> list[dict[str, Any]]:
     """
-    Detects fraud-related patterns from already-collected evidence.
+    Support the detector APIs already used by the project.
 
-    Current evidence-driven patterns:
-
-    - DEVICE_REUSE
-        Multiple distinct entities are associated with the same device.
-
-    - IP_REUSE
-        Multiple evidence items reference the same IP/infrastructure.
-
-    - VELOCITY
-        A high number of transaction-related evidence items is observed.
-
-    - FRAUD_MARKER
-        Evidence explicitly identifies a FraudPattern graph node or
-        directly describes a fraud marker.
-
-    This node does not invent patterns without supporting evidence.
+    Existing detectors may expose:
+        .detect(...)
+        .run(...)
+        .evaluate(...)
+        __call__(...)
     """
 
-    VELOCITY_THRESHOLD = 3
+    payload = {
+        "transaction": transaction,
+        "evidence": evidence,
+        "state": state,
+    }
 
-    def __init__(self, settings: Settings) -> None:
-        self.settings = settings
+    result: Any = None
 
-    def run(self, state: AgentRuntimeState) -> AgentRuntimeState:
-        """LangGraph-compatible entry point."""
-        return self.__call__(state)
+    methods = (
+        "detect",
+        "run",
+        "evaluate",
+    )
 
-    def __call__(self, state: AgentRuntimeState) -> AgentRuntimeState:
-        evidence = list(state.get("evidence", []))
-        existing_patterns = list(state.get("detected_patterns", []))
-        events = list(state.get("events", []))
-        investigation_id = state.get("investigation_id", "")
+    for method_name in methods:
+        method = getattr(detector, method_name, None)
 
-        if not evidence:
-            logger.info(
-                "no evidence available for pattern detection",
-                investigation_id=investigation_id,
+        if not callable(method):
+            continue
+
+        try:
+            result = method(**payload)
+            break
+        except TypeError:
+            try:
+                result = method(transaction)
+                break
+            except TypeError:
+                try:
+                    result = method(payload)
+                    break
+                except TypeError:
+                    continue
+
+    if result is None and callable(detector):
+        try:
+            result = detector(**payload)
+        except TypeError:
+            try:
+                result = detector(transaction)
+            except TypeError:
+                result = detector(payload)
+
+    if result is None:
+        return []
+
+    if isinstance(result, dict):
+        if isinstance(result.get("findings"), list):
+            result = result["findings"]
+        elif isinstance(result.get("patterns"), list):
+            result = result["patterns"]
+        else:
+            result = [result]
+
+    if not isinstance(result, (list, tuple, set)):
+        result = [result]
+
+    return list(result)
+
+
+def _extract_detectors(
+    detector: Any,
+) -> list[Any]:
+    """
+    Extract registered detectors without assuming one particular
+    PatternRegistry implementation.
+    """
+
+    if detector is None:
+        return []
+
+    # PatternRegistry-style containers.
+    for attribute in (
+        "detectors",
+        "patterns",
+        "registry",
+        "registered_patterns",
+    ):
+        value = getattr(detector, attribute, None)
+
+        if isinstance(value, dict):
+            return list(value.values())
+
+        if isinstance(value, (list, tuple, set)):
+            return list(value)
+
+    # A detector itself is usable.
+    return [detector]
+
+
+def _load_detector() -> FraudDetector | None:
+    try:
+        return FraudDetector()
+    except Exception:
+        return None
+
+
+def _merge_findings(
+    existing: list[dict[str, Any]],
+    new_findings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    result = list(existing)
+
+    seen: set[tuple[str, str]] = set()
+
+    for finding in result:
+        if not isinstance(finding, dict):
+            continue
+
+        seen.add(
+            (
+                str(finding.get("pattern", "")),
+                str(finding.get("description", "")),
             )
+        )
 
-            updated = advance_state(
-                state,
-                AgentStage.DETECT_PATTERNS,
-            )
-            updated["detected_patterns"] = existing_patterns
-            updated["events"] = events
-            return updated
+    for finding in new_findings:
+        if not isinstance(finding, dict):
+            continue
 
-        new_patterns: list[dict[str, Any]] = []
+        key = (
+            str(finding.get("pattern", "")),
+            str(finding.get("description", "")),
+        )
 
-        device_pattern = self._detect_device_reuse(evidence)
-        if device_pattern is not None:
-            new_patterns.append(device_pattern)
+        if key in seen:
+            continue
 
-        ip_pattern = self._detect_ip_reuse(evidence)
-        if ip_pattern is not None:
-            new_patterns.append(ip_pattern)
+        result.append(finding)
+        seen.add(key)
 
-        velocity_pattern = self._detect_velocity(evidence)
-        if velocity_pattern is not None:
-            new_patterns.append(velocity_pattern)
+    return result
 
-        fraud_marker_patterns = self._detect_fraud_markers(evidence)
-        new_patterns.extend(fraud_marker_patterns)
 
-        all_patterns = existing_patterns + new_patterns
+def detect_patterns(
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Detect known fraud patterns using the actual investigation context.
 
-        for pattern in new_patterns:
-            events.append(
-                _make_event(
-                    state,
-                    message=f"Pattern detected: {pattern['name']}",
-                    payload={
-                        "pattern_id": pattern["pattern_id"],
-                        "pattern_name": pattern["name"],
-                        "confidence": pattern["confidence"],
-                        "severity": pattern["severity"],
-                        "evidence_ids": pattern["evidence_ids"],
-                        "evidence_count": len(pattern["evidence_ids"]),
-                    },
+    Important:
+    - A detected pattern is evidence, not a final fraud verdict.
+    - Multiple patterns may coexist.
+    - Existing graph/historical evidence is passed to detectors.
+    - Detector failures do not terminate the investigation.
+    """
+
+    result = dict(state)
+
+    result["current_stage"] = "DETECT_PATTERNS"
+    result["status"] = "INVESTIGATING"
+
+    transaction = result.get("transaction")
+
+    if not isinstance(transaction, dict):
+        result["warnings"] = [
+            *list(result.get("warnings") or []),
+            "Pattern detection skipped because transaction context "
+            "is unavailable.",
+        ]
+        return result
+
+    evidence = [
+        item
+        for item in (result.get("evidence") or [])
+        if isinstance(item, dict)
+    ]
+
+    # Add graph and historical evidence explicitly so detectors can
+    # reason over relationships and prior cases.
+    graph_evidence = result.get("graph_evidence") or []
+    historical_evidence = result.get("historical_evidence") or []
+
+    if isinstance(graph_evidence, list):
+        evidence.extend(
+            item
+            for item in graph_evidence
+            if isinstance(item, dict)
+        )
+
+    if isinstance(historical_evidence, list):
+        evidence.extend(
+            item
+            for item in historical_evidence
+            if isinstance(item, dict)
+        )
+
+    detector_registry = _load_detector()
+
+    all_findings: list[dict[str, Any]] = []
+    detector_errors: list[str] = []
+
+    if detector_registry is not None:
+        detectors = _extract_detectors(detector_registry)
+
+        for detector in detectors:
+            try:
+                raw_findings = _run_detector(
+                    detector,
+                    transaction=transaction,
+                    evidence=evidence,
+                    state=result,
                 )
+
+                for index, finding in enumerate(raw_findings):
+                    normalised = _normalise_finding(
+                        finding,
+                        len(all_findings) + index,
+                    )
+
+                    all_findings.append(normalised)
+
+            except Exception as exc:
+                detector_name = type(detector).__name__
+
+                detector_errors.append(
+                    f"{detector_name}: {exc}"
+                )
+
+    # ------------------------------------------------------------------
+    # Existing findings may have been produced by another stage.
+    # Preserve them.
+    # ------------------------------------------------------------------
+    existing_findings = [
+        item
+        for item in (
+            result.get("pattern_findings")
+            or result.get("patterns")
+            or result.get("fraud_findings")
+            or []
+        )
+        if isinstance(item, dict)
+    ]
+
+    merged_findings = _merge_findings(
+        existing_findings,
+        all_findings,
+    )
+
+    result["pattern_findings"] = merged_findings
+    result["patterns"] = merged_findings
+    result["fraud_findings"] = merged_findings
+
+    # ------------------------------------------------------------------
+    # Primary pattern = strongest detected pattern.
+    # ------------------------------------------------------------------
+    strongest = max(
+        merged_findings,
+        key=lambda item: float(
+            item.get("score")
+            or item.get("confidence")
+            or 0.0
+        ),
+        default=None,
+    )
+
+    if strongest:
+        result["fraud_type"] = strongest.get(
+            "pattern"
+        )
+
+    # ------------------------------------------------------------------
+    # Pattern score is the strongest pattern signal, not a sum.
+    # Summing would artificially inflate risk when several detectors
+    # describe the same underlying event.
+    # ------------------------------------------------------------------
+    pattern_score = max(
+        (
+            float(
+                item.get("score")
+                or item.get("confidence")
+                or 0.0
             )
+            for item in merged_findings
+            if isinstance(item, dict)
+        ),
+        default=0.0,
+    )
 
-        logger.info(
-            "pattern detection completed",
-            investigation_id=investigation_id,
-            new_patterns=len(new_patterns),
-            total_patterns=len(all_patterns),
+    pattern_score = max(
+        0.0,
+        min(1.0, pattern_score),
+    )
+
+    result["pattern_score"] = pattern_score
+
+    if detector_errors:
+        result["pattern_detector_errors"] = detector_errors
+
+        warnings = list(
+            result.get("warnings") or []
         )
 
-        updated = advance_state(
-            state,
-            AgentStage.DETECT_PATTERNS,
-        )
-        updated["detected_patterns"] = all_patterns
-        updated["events"] = events
-
-        return updated
-
-    def _detect_device_reuse(
-        self,
-        evidence: list[Evidence],
-    ) -> dict[str, Any] | None:
-        device_evidence = [
-            ev
-            for ev in evidence
-            if self._is_device_evidence(ev)
-        ]
-
-        if len(device_evidence) < 2:
-            return None
-
-        device_entities: dict[str, set[str]] = {}
-
-        for ev in device_evidence:
-            device_id = (
-                ev.source_id
-                or ev.source_reference
-                or ""
-            ).strip()
-
-            if not device_id:
-                continue
-
-            entities = {
-                entity.strip()
-                for entity in ev.entities
-                if entity and entity.strip()
-            }
-
-            if entities:
-                device_entities.setdefault(
-                    device_id,
-                    set(),
-                ).update(entities)
-
-        shared_devices = {
-            device_id: entities
-            for device_id, entities in device_entities.items()
-            if len(entities) >= 2
-        }
-
-        if not shared_devices:
-            return None
-
-        evidence_ids = [
-            ev.evidence_id
-            for ev in device_evidence
-        ]
-
-        shared_entity_count = sum(
-            len(entities)
-            for entities in shared_devices.values()
+        warnings.append(
+            f"{len(detector_errors)} fraud pattern detector(s) "
+            "failed during this stage."
         )
 
-        confidence = min(
-            0.90,
-            0.50 + 0.10 * len(shared_devices),
-        )
+        result["warnings"] = warnings
 
-        return {
-            "pattern_id": f"patt_{uuid4().hex[:8]}",
-            "name": "DEVICE_REUSE",
-            "description": (
-                f"{shared_entity_count} distinct entities share "
-                f"{len(shared_devices)} device(s)."
+    # ------------------------------------------------------------------
+    # Event
+    # ------------------------------------------------------------------
+    now = _utc_now()
+
+    events = list(result.get("events") or [])
+
+    events.append(
+        {
+            "event_id": (
+                f"patterns-"
+                f"{result.get('transaction_id') or 'unknown'}-"
+                f"{now}"
             ),
-            "confidence": confidence,
-            "evidence_ids": evidence_ids,
-            "severity": "high",
-            "rationale": (
-                "Shared device identifiers across distinct entities "
-                "may indicate coordinated activity, account takeover, "
-                "or synthetic identity relationships."
+            "event_type": "PATTERN_DETECTED",
+            "investigation_id": result.get(
+                "investigation_id"
             ),
-            "detected_at": _utc_now().isoformat(),
-            "attributes": {
-                "shared_devices": {
-                    device_id: sorted(entities)
-                    for device_id, entities in shared_devices.items()
-                },
-            },
-        }
-
-    def _detect_ip_reuse(
-        self,
-        evidence: list[Evidence],
-    ) -> dict[str, Any] | None:
-        ip_evidence = [
-            ev
-            for ev in evidence
-            if self._is_ip_evidence(ev)
-        ]
-
-        if len(ip_evidence) < 2:
-            return None
-
-        ip_groups: dict[str, set[str]] = {}
-
-        for ev in ip_evidence:
-            reference = (
-                ev.source_id
-                or ev.source_reference
-                or ""
-            ).strip()
-
-            if not reference:
-                continue
-
-            entities = {
-                entity.strip()
-                for entity in ev.entities
-                if entity and entity.strip()
-            }
-
-            ip_groups.setdefault(reference, set()).update(
-                entities
-            )
-
-        shared_ips = {
-            ip: entities
-            for ip, entities in ip_groups.items()
-            if len(entities) >= 2
-        }
-
-        evidence_ids = [
-            ev.evidence_id
-            for ev in ip_evidence
-        ]
-
-        if not evidence_ids:
-            return None
-
-        confidence = min(
-            0.80,
-            0.45 + 0.05 * len(ip_evidence),
-        )
-
-        return {
-            "pattern_id": f"patt_{uuid4().hex[:8]}",
-            "name": "IP_REUSE",
-            "description": (
-                f"{len(ip_evidence)} evidence items reference "
-                "shared IP/infrastructure information."
+            "case_id": result.get("case_id"),
+            "stage": "DETECT_PATTERNS",
+            "message": (
+                f"Detected {len(merged_findings)} fraud pattern "
+                f"finding(s)."
             ),
-            "confidence": confidence,
-            "evidence_ids": evidence_ids,
-            "severity": "medium",
-            "rationale": (
-                "Repeated IP or infrastructure relationships can "
-                "provide corroborating evidence of coordinated activity."
-            ),
-            "detected_at": _utc_now().isoformat(),
-            "attributes": {
-                "shared_ip_groups": {
-                    reference: sorted(entities)
-                    for reference, entities in shared_ips.items()
-                },
-            },
-        }
-
-    def _detect_velocity(
-        self,
-        evidence: list[Evidence],
-    ) -> dict[str, Any] | None:
-        transaction_evidence = [
-            ev
-            for ev in evidence
-            if self._is_transaction_evidence(ev)
-        ]
-
-        if len(transaction_evidence) < self.VELOCITY_THRESHOLD:
-            return None
-
-        evidence_ids = [
-            ev.evidence_id
-            for ev in transaction_evidence
-        ]
-
-        confidence = min(
-            0.75,
-            0.40 + 0.05 * len(transaction_evidence),
-        )
-
-        return {
-            "pattern_id": f"patt_{uuid4().hex[:8]}",
-            "name": "VELOCITY",
-            "description": (
-                f"{len(transaction_evidence)} transaction-related "
-                "evidence items were collected."
-            ),
-            "confidence": confidence,
-            "evidence_ids": evidence_ids,
-            "severity": "medium",
-            "rationale": (
-                f"Observed {len(transaction_evidence)} transaction-related "
-                "evidence items. This is a velocity signal and should be "
-                "considered together with transaction timing, amount, "
-                "customer history, and other evidence."
-            ),
-            "detected_at": _utc_now().isoformat(),
-            "attributes": {
-                "transaction_evidence_count": len(
-                    transaction_evidence
+            "payload": {
+                "transaction_id": result.get(
+                    "transaction_id"
                 ),
-                "threshold": self.VELOCITY_THRESHOLD,
+                "pattern_count": len(
+                    merged_findings
+                ),
+                "pattern_score": pattern_score,
+                "primary_pattern": (
+                    result.get("fraud_type")
+                ),
+                "detector_errors": len(
+                    detector_errors
+                ),
             },
+            "created_at": now,
         }
+    )
 
-    def _detect_fraud_markers(
-        self,
-        evidence: list[Evidence],
-    ) -> list[dict[str, Any]]:
-        marker_evidence = [
-            ev
-            for ev in evidence
-            if self._is_fraud_marker(ev)
-        ]
+    result["events"] = events
 
-        patterns: list[dict[str, Any]] = []
+    result["progress"] = max(
+        float(result.get("progress") or 0.0),
+        0.45,
+    )
 
-        for ev in marker_evidence:
-            confidence = min(
-                1.0,
-                max(0.0, ev.confidence) * 1.10,
-            )
+    return result
 
-            patterns.append(
-                {
-                    "pattern_id": f"patt_{uuid4().hex[:8]}",
-                    "name": "FRAUD_MARKER",
-                    "description": (
-                        f"Explicit fraud marker found: {ev.title}"
-                    ),
-                    "confidence": confidence,
-                    "evidence_ids": [ev.evidence_id],
-                    "severity": "critical",
-                    "rationale": (
-                        f"Evidence '{ev.evidence_id}' contains a direct "
-                        f"fraud-related marker: {ev.description}"
-                    ),
-                    "detected_at": _utc_now().isoformat(),
-                    "attributes": {
-                        "source_type": str(ev.source_type),
-                        "source_id": ev.source_id,
-                    },
-                }
-            )
 
-        return patterns
-
-    @staticmethod
-    def _is_device_evidence(ev: Evidence) -> bool:
-        source_reference = (
-            ev.source_reference or ""
-        ).lower()
-        title = ev.title.lower()
-
-        return (
-            "device" in source_reference
-            or "device" in title
-            or str(ev.source_type).lower().endswith("device")
-        )
-
-    @staticmethod
-    def _is_ip_evidence(ev: Evidence) -> bool:
-        source_reference = (
-            ev.source_reference or ""
-        ).lower()
-        title = ev.title.lower()
-        description = ev.description.lower()
-
-        return (
-            "ip" in source_reference
-            or "ip" in title
-            or "ip address" in description
-        )
-
-    @staticmethod
-    def _is_transaction_evidence(ev: Evidence) -> bool:
-        source_reference = (
-            ev.source_reference or ""
-        ).lower()
-        title = ev.title.lower()
-
-        return (
-            str(ev.source_type).lower().endswith("transaction")
-            or "transaction" in source_reference
-            or "transaction" in title
-            or bool(ev.transaction_ids)
-        )
-
-    @staticmethod
-    def _is_fraud_marker(ev: Evidence) -> bool:
-        source_reference = (
-            ev.source_reference or ""
-        ).lower()
-        title = ev.title.lower()
-
-        return (
-            "fraudpattern" in source_reference
-            or (
-                ev.evidence_type == EvidenceType.DIRECT
-                and "fraud" in title
-            )
-        )
+def run(
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    return detect_patterns(state)

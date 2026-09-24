@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -10,6 +13,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from backend.app.config import Settings
 from backend.app.dependencies import get_app_settings
 from backend.benchmark.runner import BenchmarkRunner
+from backend.ml.benchmark import FraudModelBenchmark
+from backend.ml.inference import FraudModelInference
+from backend.ml.transaction_loader import TransactionRecordLoader
 
 router = APIRouter(
     prefix="/benchmark",
@@ -61,6 +67,32 @@ class BenchmarkReport(BaseModel):
     output_reference: str | None = None
 
 
+def _ml_benchmark_path(settings: Settings) -> Path:
+    return settings.outputs_dir.parent / "artifacts" / "ml" / "fraud_benchmark.json"
+
+
+def _run_ml_benchmark(settings: Settings) -> dict[str, Any]:
+    inference = FraudModelInference(
+        model_path=settings.fraud_model_path,
+        metadata_path=settings.fraud_model_metadata_path,
+        threshold=settings.fraud_model_threshold,
+    )
+    loader = TransactionRecordLoader(
+        transactions_path=settings.raw_data_dir / "transactions.csv",
+        identity_path=settings.raw_data_dir / "identity.csv",
+        chunk_size=settings.dataset_chunk_size,
+    )
+    benchmark = FraudModelBenchmark(
+        inference=inference,
+        transaction_loader=loader,
+    )
+    cases = benchmark.load_cases(settings.raw_data_dir / "case_pack.csv")
+    predictions = benchmark.evaluate(cases[: settings.benchmark_max_cases])
+    output_path = _ml_benchmark_path(settings)
+    benchmark.save_report(output_path, predictions)
+    return json.loads(output_path.read_text(encoding="utf-8"))
+
+
 _RUNNER_INSTANCE: BenchmarkRunner | None = None
 
 
@@ -69,6 +101,50 @@ def get_benchmark_runner(settings: Settings = Depends(get_app_settings)) -> Benc
     if _RUNNER_INSTANCE is None:
         _RUNNER_INSTANCE = BenchmarkRunner(settings=settings)
     return _RUNNER_INSTANCE
+
+
+@router.get(
+    "",
+    response_model=dict[str, Any],
+)
+async def get_benchmark(
+    settings: Settings = Depends(get_app_settings),
+) -> dict[str, Any]:
+    output_path = _ml_benchmark_path(settings)
+    if not output_path.exists():
+        return {
+            "benchmark_cases": 0,
+            "ground_truth_available": False,
+            "note": (
+                "No ML benchmark report has been generated yet. "
+                "POST /api/v1/benchmark to run it against the real case_pack.csv."
+            ),
+            "cases": [],
+            "output_reference": str(output_path),
+        }
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    payload["output_reference"] = str(output_path)
+    return payload
+
+
+@router.post(
+    "",
+    response_model=dict[str, Any],
+)
+async def run_benchmark(
+    settings: Settings = Depends(get_app_settings),
+) -> dict[str, Any]:
+    try:
+        payload = await asyncio.to_thread(_run_ml_benchmark, settings)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"ML benchmark failed: {exc}",
+        ) from exc
+
+    payload["output_reference"] = str(_ml_benchmark_path(settings))
+    return payload
 
 
 @router.post(

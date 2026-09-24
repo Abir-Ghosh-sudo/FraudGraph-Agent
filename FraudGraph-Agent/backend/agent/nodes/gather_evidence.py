@@ -1,660 +1,636 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
-from uuid import uuid4
-
-from backend.agent.state import AgentRuntimeState, advance_state
-from backend.app.config import Settings
-from backend.app.logging import get_logger
-from backend.app.schemas.agent import AgentEventType, AgentStage
-from backend.app.schemas.evidence import (
-    Evidence,
-    EvidenceSourceType,
-    EvidenceStrength,
-    EvidenceType,
-)
-from backend.app.schemas.graph import (
-    GraphEdge,
-    GraphNode,
-    InvestigationSubgraph,
-)
-
-logger = get_logger(__name__)
 
 
-_NODE_TYPE_TO_EVIDENCE_TYPE: dict[str, EvidenceType] = {
-    "Transaction": EvidenceType.DIRECT,
-    "Customer": EvidenceType.CORROBORATING,
-    "Device": EvidenceType.CORROBORATING,
-    "IP": EvidenceType.CORROBORATING,
-    "Card": EvidenceType.CORROBORATING,
-    "Merchant": EvidenceType.CONTEXTUAL,
-    "Address": EvidenceType.CONTEXTUAL,
-    "Email": EvidenceType.CONTEXTUAL,
-    "Case": EvidenceType.CORROBORATING,
-    "FraudPattern": EvidenceType.DERIVED,
-}
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
-_NODE_TYPE_TO_SOURCE_TYPE: dict[str, EvidenceSourceType] = {
-    "Transaction": EvidenceSourceType.TRANSACTION,
-    "Customer": EvidenceSourceType.CUSTOMER,
-    "Device": EvidenceSourceType.DEVICE,
-    "IP": EvidenceSourceType.CONNECTION,
-    "Card": EvidenceSourceType.CONNECTION,
-    "Merchant": EvidenceSourceType.GRAPH,
-    "Address": EvidenceSourceType.GRAPH,
-    "Email": EvidenceSourceType.GRAPH,
-    "Case": EvidenceSourceType.HISTORICAL_CASE,
-    "FraudPattern": EvidenceSourceType.GRAPH,
-}
+def _clean_id(value: Any) -> str | None:
+    if value is None:
+        return None
+
+    value = str(value).strip()
+
+    if not value:
+        return None
+
+    if value.endswith(".0"):
+        value = value[:-2]
+
+    return value
 
 
-_NODE_TYPE_TO_STRENGTH: dict[str, EvidenceStrength] = {
-    "Transaction": EvidenceStrength.STRONG,
-    "FraudPattern": EvidenceStrength.VERY_STRONG,
-    "Case": EvidenceStrength.STRONG,
-    "Device": EvidenceStrength.MODERATE,
-    "IP": EvidenceStrength.MODERATE,
-    "Card": EvidenceStrength.MODERATE,
-    "Customer": EvidenceStrength.WEAK,
-    "Merchant": EvidenceStrength.WEAK,
-    "Address": EvidenceStrength.WEAK,
-    "Email": EvidenceStrength.WEAK,
-}
+def _transaction_value(
+    transaction: dict[str, Any],
+    *keys: str,
+) -> Any:
+    for key in keys:
+        value = transaction.get(key)
+
+        if value is not None and value != "":
+            return value
+
+    return None
 
 
-def utc_now() -> datetime:
-    """Return the current timezone-aware UTC timestamp."""
-    return datetime.now(UTC)
+def _append_unique_evidence(
+    existing: list[dict[str, Any]],
+    new_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    result = list(existing)
 
-
-def _make_event(
-    state: AgentRuntimeState,
-    event_type: AgentEventType,
-    message: str,
-    payload: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Create a normalized evidence-gathering event."""
-    return {
-        "event_id": f"evt_{uuid4().hex[:12]}",
-        "event_type": event_type,
-        "investigation_id": state.get("investigation_id", ""),
-        "case_id": state.get("case_id"),
-        "stage": AgentStage.GATHER_EVIDENCE,
-        "message": message,
-        "payload": payload or {},
-        "created_at": utc_now(),
+    existing_ids = {
+        str(item.get("evidence_id"))
+        for item in result
+        if isinstance(item, dict)
+        and item.get("evidence_id") is not None
     }
 
+    for item in new_items:
+        if not isinstance(item, dict):
+            continue
 
-class GatherEvidenceNode:
-    """
-    Convert investigation graph data into structured evidence.
+        evidence_id = item.get("evidence_id")
 
-    Graph nodes become entity-level evidence and graph edges become
-    relationship evidence. Existing evidence is preserved and duplicate
-    evidence is not added again.
-    """
+        if evidence_id is None:
+            continue
 
-    def __init__(self, settings: Settings) -> None:
-        self.settings = settings
+        evidence_id = str(evidence_id)
 
-    def __call__(
-        self,
-        state: AgentRuntimeState,
-    ) -> AgentRuntimeState:
-        """Execute the evidence-gathering node."""
-        return self.run(state)
+        if evidence_id in existing_ids:
+            continue
 
-    def run(
-        self,
-        state: AgentRuntimeState,
-    ) -> AgentRuntimeState:
-        """Collect evidence from the investigation subgraph."""
-        graph = state.get("graph")
-        investigation_id = state.get(
-            "investigation_id",
-            "",
-        )
-        trigger = state.get("trigger", {})
+        result.append(item)
+        existing_ids.add(evidence_id)
 
-        existing_evidence = list(
-            state.get("evidence", []),
-        )
-        events = list(
-            state.get("events", []),
-        )
+    return result
 
-        if not isinstance(trigger, dict):
-            trigger = {}
 
-        if graph is None:
-            logger.info(
-                "no graph data available for evidence gathering",
-                investigation_id=investigation_id,
-            )
+def _build_customer_evidence(
+    *,
+    customer_id: str | None,
+    card_id: str | None,
+) -> list[dict[str, Any]]:
+    evidence: list[dict[str, Any]] = []
 
-            events.append(
-                _make_event(
-                    state,
-                    AgentEventType.EVIDENCE_FOUND,
-                    "No graph data available; evidence gathering skipped.",
-                    {
-                        "evidence_count": 0,
-                    },
-                )
-            )
-
-            updated = advance_state(
-                state,
-                AgentStage.GATHER_EVIDENCE,
-            )
-
-            updated["evidence"] = existing_evidence
-            updated["events"] = events
-
-            metadata = dict(
-                state.get("metadata", {}),
-            )
-            metadata["evidence_collection_status"] = "no_graph_data"
-            updated["metadata"] = metadata
-
-            return updated
-
-        new_evidence = self._collect_from_graph(
-            graph=graph,
-            investigation_id=investigation_id,
-            trigger=trigger,
-            existing_evidence=existing_evidence,
-        )
-
-        all_evidence = (
-            existing_evidence + new_evidence
-        )
-
-        type_counts: dict[str, int] = {}
-
-        for evidence in new_evidence:
-            evidence_type = str(
-                evidence.evidence_type,
-            )
-            type_counts[evidence_type] = (
-                type_counts.get(
-                    evidence_type,
-                    0,
-                )
-                + 1
-            )
-
-        logger.info(
-            "evidence gathered from graph",
-            investigation_id=investigation_id,
-            new_count=len(new_evidence),
-            total_count=len(all_evidence),
-            by_type=type_counts,
-        )
-
-        events.append(
-            _make_event(
-                state,
-                AgentEventType.EVIDENCE_FOUND,
-                (
-                    f"Gathered {len(new_evidence)} "
-                    "new evidence items from graph."
+    if customer_id:
+        evidence.append(
+            {
+                "evidence_id": f"customer-context-{customer_id}",
+                "source_type": "CUSTOMER",
+                "evidence_type": "CONTEXTUAL",
+                "title": "Customer investigation context",
+                "description": (
+                    f"The investigation is associated with "
+                    f"customer {customer_id}."
                 ),
-                {
-                    "new_evidence_count": len(
-                        new_evidence,
-                    ),
-                    "total_evidence_count": len(
-                        all_evidence,
-                    ),
-                    "graph_node_count": graph.node_count,
-                    "graph_edge_count": graph.edge_count,
-                    "evidence_by_type": type_counts,
+                "data": {
+                    "customer_id": customer_id,
+                    "card_id": card_id,
                 },
-            )
+                "confidence": 0.95,
+            }
         )
 
-        updated = advance_state(
-            state,
-            AgentStage.GATHER_EVIDENCE,
-        )
-
-        updated["evidence"] = all_evidence
-        updated["events"] = events
-
-        metadata = dict(
-            state.get("metadata", {}),
-        )
-
-        metadata["evidence_collection_status"] = "completed"
-        metadata["evidence_count"] = len(
-            all_evidence,
-        )
-        metadata["new_evidence_count"] = len(
-            new_evidence,
-        )
-        metadata["evidence_by_type"] = type_counts
-
-        updated["metadata"] = metadata
-
-        return updated
-
-    def _collect_from_graph(
-        self,
-        graph: InvestigationSubgraph,
-        investigation_id: str,
-        trigger: dict[str, Any],
-        existing_evidence: list[Evidence],
-    ) -> list[Evidence]:
-        """Collect unique evidence from graph nodes and edges."""
-        new_evidence: list[Evidence] = []
-
-        existing_keys: set[
-            tuple[str, str | None, str]
-        ] = {
-            (
-                str(evidence.source_type),
-                evidence.source_id,
-                str(evidence.evidence_type),
-            )
-            for evidence in existing_evidence
-        }
-
-        for node in graph.nodes:
-            evidence = self._node_to_evidence(
-                node=node,
-                investigation_id=investigation_id,
-                trigger=trigger,
-                existing_keys=existing_keys,
-            )
-
-            if evidence is None:
-                continue
-
-            new_evidence.append(evidence)
-
-            existing_keys.add(
-                (
-                    str(evidence.source_type),
-                    evidence.source_id,
-                    str(evidence.evidence_type),
-                )
-            )
-
-        for edge in graph.edges:
-            evidence = self._edge_to_evidence(
-                edge=edge,
-                investigation_id=investigation_id,
-                existing_keys=existing_keys,
-            )
-
-            if evidence is None:
-                continue
-
-            new_evidence.append(evidence)
-
-            existing_keys.add(
-                (
-                    str(evidence.source_type),
-                    evidence.source_id,
-                    str(evidence.evidence_type),
-                )
-            )
-
-        return new_evidence
-
-    def _node_to_evidence(
-        self,
-        node: GraphNode,
-        investigation_id: str,
-        trigger: dict[str, Any],
-        existing_keys: set[
-            tuple[str, str | None, str]
-        ],
-    ) -> Evidence | None:
-        """Convert a graph node into evidence."""
-        node_type = node.node_type
-
-        evidence_type = (
-            _NODE_TYPE_TO_EVIDENCE_TYPE.get(
-                node_type,
-                EvidenceType.CONTEXTUAL,
-            )
-        )
-
-        source_type = (
-            _NODE_TYPE_TO_SOURCE_TYPE.get(
-                node_type,
-                EvidenceSourceType.GRAPH,
-            )
-        )
-
-        strength = (
-            _NODE_TYPE_TO_STRENGTH.get(
-                node_type,
-                EvidenceStrength.WEAK,
-            )
-        )
-
-        dedup_key = (
-            str(source_type),
-            node.node_id,
-            str(evidence_type),
-        )
-
-        if dedup_key in existing_keys:
-            return None
-
-        properties = node.properties or {}
-
-        name = (
-            properties.get("name")
-            or node.label
-            or node.node_id
-        )
-
-        amount = (
-            properties.get("amount")
-            or properties.get("TransactionAmt")
-        )
-
-        if node_type == "Transaction" and amount is not None:
-            title = (
-                f"Transaction {node.node_id}: "
-                f"amount={amount}"
-            )
-        elif node_type == "FraudPattern":
-            pattern_name = properties.get(
-                "pattern_name",
-                node.node_id,
-            )
-            title = (
-                f"Fraud Pattern: {pattern_name}"
-            )
-        else:
-            title = (
-                f"{node_type}: {name}"
-            )
-
-        description = self._build_node_description(
-            node,
-            trigger,
-        )
-
-        confidence = self._estimate_node_confidence(
-            node,
-            trigger,
-        )
-
-        relevance = self._estimate_relevance(
-            node,
-            trigger,
-        )
-
-        now = utc_now()
-
-        return Evidence(
-            evidence_id=f"ev_{uuid4().hex[:12]}",
-            source_type=source_type,
-            evidence_type=evidence_type,
-            title=title,
-            description=description,
-            source_id=node.node_id,
-            source_reference=(
-                f"graph:node:"
-                f"{node_type}:"
-                f"{node.node_id}"
-            ),
-            strength=strength,
-            reliability=0.85,
-            relevance=relevance,
-            confidence=confidence,
-            entities=[node.node_id],
-            transaction_ids=(
-                [node.node_id]
-                if node_type == "Transaction"
-                else []
-            ),
-            case_ids=(
-                [node.node_id]
-                if node_type == "Case"
-                else []
-            ),
-            provenance={
-                "node_type": node_type,
-                "node_id": node.node_id,
-                "graph_query": (
-                    "investigation_subgraph"
+    if card_id:
+        evidence.append(
+            {
+                "evidence_id": f"card-context-{card_id}",
+                "source_type": "ACCOUNT",
+                "evidence_type": "CONTEXTUAL",
+                "title": "Card investigation context",
+                "description": (
+                    f"The investigated transaction is associated "
+                    f"with card {card_id}."
                 ),
-                "investigation_id": investigation_id,
-            },
-            metadata={
-                "properties": {
-                    str(key): str(value)
-                    for key, value in properties.items()
-                    if value is not None
-                }
-            },
-            collected_at=now,
-            created_at=now,
+                "data": {
+                    "card_id": card_id,
+                    "customer_id": customer_id,
+                },
+                "confidence": 0.95,
+            }
         )
 
-    def _edge_to_evidence(
-        self,
-        edge: GraphEdge,
-        investigation_id: str,
-        existing_keys: set[
-            tuple[str, str | None, str]
-        ],
-    ) -> Evidence | None:
-        """Convert a graph relationship into evidence."""
-        source_type = EvidenceSourceType.CONNECTION
-        evidence_type = EvidenceType.CORROBORATING
+    return evidence
 
-        edge_key = (
-            f"{edge.source_id}:"
-            f"{edge.edge_type}:"
-            f"{edge.target_id}"
+
+def _build_transaction_context_evidence(
+    transaction: dict[str, Any],
+) -> list[dict[str, Any]]:
+    evidence: list[dict[str, Any]] = []
+
+    transaction_id = _clean_id(
+        _transaction_value(
+            transaction,
+            "TransactionID",
+            "transaction_id",
+        )
+    )
+
+    if not transaction_id:
+        return evidence
+
+    amount = _transaction_value(
+        transaction,
+        "TransactionAmt",
+        "transaction_amount",
+    )
+
+    channel = _transaction_value(
+        transaction,
+        "channel",
+    )
+
+    timestamp = _transaction_value(
+        transaction,
+        "ts",
+    )
+
+    product = _transaction_value(
+        transaction,
+        "ProductCD",
+        "product",
+    )
+
+    if amount is not None:
+        evidence.append(
+            {
+                "evidence_id": f"transaction-amount-{transaction_id}",
+                "source_type": "TRANSACTION",
+                "evidence_type": "DIRECT",
+                "title": "Transaction amount",
+                "description": (
+                    f"Transaction {transaction_id} has amount "
+                    f"{amount}."
+                ),
+                "data": {
+                    "transaction_id": transaction_id,
+                    "amount": amount,
+                },
+                "confidence": 0.98,
+            }
         )
 
-        dedup_key = (
-            str(source_type),
-            edge_key,
-            str(evidence_type),
+    if channel:
+        evidence.append(
+            {
+                "evidence_id": f"transaction-channel-{transaction_id}",
+                "source_type": "TRANSACTION",
+                "evidence_type": "CONTEXTUAL",
+                "title": "Transaction channel",
+                "description": (
+                    f"Transaction {transaction_id} used "
+                    f"channel {channel}."
+                ),
+                "data": {
+                    "transaction_id": transaction_id,
+                    "channel": channel,
+                },
+                "confidence": 0.95,
+            }
         )
 
-        if dedup_key in existing_keys:
-            return None
-
-        now = utc_now()
-
-        return Evidence(
-            evidence_id=f"ev_{uuid4().hex[:12]}",
-            source_type=source_type,
-            evidence_type=evidence_type,
-            title=(
-                f"Connection: "
-                f"{edge.source_id} "
-                f"→ [{edge.edge_type}] → "
-                f"{edge.target_id}"
-            ),
-            description=(
-                f"Graph relationship "
-                f"'{edge.edge_type}' connects "
-                f"entity {edge.source_id} "
-                f"to entity {edge.target_id}."
-            ),
-            source_id=edge_key,
-            source_reference=(
-                f"graph:edge:"
-                f"{edge.edge_type}:"
-                f"{edge.source_id}:"
-                f"{edge.target_id}"
-            ),
-            strength=EvidenceStrength.MODERATE,
-            reliability=0.80,
-            relevance=0.50,
-            confidence=0.60,
-            entities=[
-                edge.source_id,
-                edge.target_id,
-            ],
-            transaction_ids=[],
-            case_ids=[],
-            provenance={
-                "edge_type": edge.edge_type,
-                "source_id": edge.source_id,
-                "target_id": edge.target_id,
-                "investigation_id": investigation_id,
-            },
-            metadata={
-                "properties": edge.properties or {},
-            },
-            collected_at=now,
-            created_at=now,
+    if timestamp:
+        evidence.append(
+            {
+                "evidence_id": f"transaction-time-{transaction_id}",
+                "source_type": "TRANSACTION",
+                "evidence_type": "DIRECT",
+                "title": "Transaction time",
+                "description": (
+                    f"Transaction {transaction_id} occurred at "
+                    f"{timestamp}."
+                ),
+                "data": {
+                    "transaction_id": transaction_id,
+                    "timestamp": timestamp,
+                },
+                "confidence": 0.98,
+            }
         )
 
-    @staticmethod
-    def _build_node_description(
-        node: GraphNode,
-        trigger: dict[str, Any],
-    ) -> str:
-        """Build a concise evidence description."""
-        properties = node.properties or {}
+    if product:
+        evidence.append(
+            {
+                "evidence_id": f"transaction-product-{transaction_id}",
+                "source_type": "TRANSACTION",
+                "evidence_type": "CONTEXTUAL",
+                "title": "Transaction product",
+                "description": (
+                    f"Transaction {transaction_id} has "
+                    f"product category {product}."
+                ),
+                "data": {
+                    "transaction_id": transaction_id,
+                    "product": product,
+                },
+                "confidence": 0.90,
+            }
+        )
 
-        parts = [
-            f"{node.node_type} entity: "
-            f"{node.node_id}"
+    return evidence
+
+
+def _build_identity_evidence(
+    transaction: dict[str, Any],
+) -> list[dict[str, Any]]:
+    evidence: list[dict[str, Any]] = []
+
+    transaction_id = _clean_id(
+        _transaction_value(
+            transaction,
+            "TransactionID",
+            "transaction_id",
+        )
+    )
+
+    if not transaction_id:
+        return evidence
+
+    device_type = _transaction_value(
+        transaction,
+        "DeviceType",
+    )
+
+    device_info = _transaction_value(
+        transaction,
+        "DeviceInfo",
+    )
+
+    addr1 = _transaction_value(
+        transaction,
+        "addr1",
+    )
+
+    addr2 = _transaction_value(
+        transaction,
+        "addr2",
+    )
+
+    ip = _transaction_value(
+        transaction,
+        "ip",
+        "IP",
+    )
+
+    if device_type:
+        evidence.append(
+            {
+                "evidence_id": f"identity-device-type-{transaction_id}",
+                "source_type": "DEVICE",
+                "evidence_type": "DIRECT",
+                "title": "Device type",
+                "description": (
+                    f"Device type associated with transaction "
+                    f"{transaction_id}: {device_type}."
+                ),
+                "data": {
+                    "transaction_id": transaction_id,
+                    "device_type": device_type,
+                },
+                "confidence": 0.92,
+            }
+        )
+
+    if device_info:
+        evidence.append(
+            {
+                "evidence_id": f"identity-device-info-{transaction_id}",
+                "source_type": "DEVICE",
+                "evidence_type": "DIRECT",
+                "title": "Device information",
+                "description": (
+                    f"Device information is available for "
+                    f"transaction {transaction_id}."
+                ),
+                "data": {
+                    "transaction_id": transaction_id,
+                    "device_info": str(device_info),
+                },
+                "confidence": 0.88,
+            }
+        )
+
+    if addr1 is not None or addr2 is not None:
+        evidence.append(
+            {
+                "evidence_id": f"identity-address-{transaction_id}",
+                "source_type": "ACCOUNT",
+                "evidence_type": "CONTEXTUAL",
+                "title": "Address context",
+                "description": (
+                    f"Address-related transaction fields are "
+                    f"available for transaction {transaction_id}."
+                ),
+                "data": {
+                    "transaction_id": transaction_id,
+                    "addr1": addr1,
+                    "addr2": addr2,
+                },
+                "confidence": 0.75,
+            }
+        )
+
+    if ip:
+        evidence.append(
+            {
+                "evidence_id": f"identity-ip-{transaction_id}",
+                "source_type": "CONNECTION",
+                "evidence_type": "DIRECT",
+                "title": "IP/connection information",
+                "description": (
+                    f"Connection information is available for "
+                    f"transaction {transaction_id}."
+                ),
+                "data": {
+                    "transaction_id": transaction_id,
+                    "ip": ip,
+                },
+                "confidence": 0.90,
+            }
+        )
+
+    return evidence
+
+
+def _extract_existing_graph_evidence(
+    state: dict[str, Any],
+) -> list[dict[str, Any]]:
+    graph_evidence = state.get("graph_evidence")
+
+    if not isinstance(graph_evidence, list):
+        return []
+
+    return [
+        item
+        for item in graph_evidence
+        if isinstance(item, dict)
+    ]
+
+
+def _extract_existing_historical_evidence(
+    state: dict[str, Any],
+) -> list[dict[str, Any]]:
+    historical = state.get("historical_evidence")
+
+    if not isinstance(historical, list):
+        return []
+
+    return [
+        item
+        for item in historical
+        if isinstance(item, dict)
+    ]
+
+
+def gather_evidence(
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Collect and normalize currently available investigation evidence.
+
+    This stage does not decide whether the transaction is fraudulent.
+
+    It prepares evidence for:
+        transaction -> identity/device/IP -> graph -> history
+        -> pattern detection -> risk assessment
+    """
+
+    result = dict(state)
+
+    result["current_stage"] = "GATHER_EVIDENCE"
+    result["status"] = "INVESTIGATING"
+
+    transaction = result.get("transaction")
+
+    if not isinstance(transaction, dict):
+        result["warnings"] = [
+            *list(result.get("warnings") or []),
+            "No transaction context available for evidence gathering.",
         ]
 
-        significant_properties = {
-            "amount",
-            "TransactionAmt",
-            "risk_score",
-            "isFraud",
-            "is_flagged",
-            "status",
-            "device_type",
-            "country",
-        }
+        result["requires_additional_evidence"] = True
 
-        for key in significant_properties:
-            value = properties.get(key)
+        return result
 
-            if value is not None:
-                parts.append(
-                    f"{key}={value}"
-                )
+    customer_id = _clean_id(
+        result.get("customer_id")
+        or transaction.get("customer_id")
+    )
 
-        if (
-            trigger.get("transaction_id")
-            == node.node_id
-            or trigger.get("customer_id")
-            == node.node_id
-            or trigger.get("account_id")
-            == node.node_id
-        ):
-            parts.append(
-                "[PRIMARY INVESTIGATION TARGET]"
+    card_id = _clean_id(
+        result.get("card_id")
+        or transaction.get("card_id")
+    )
+
+    transaction_id = _clean_id(
+        result.get("transaction_id")
+        or transaction.get("TransactionID")
+        or transaction.get("transaction_id")
+    )
+
+    if customer_id:
+        result["customer_id"] = customer_id
+
+    if card_id:
+        result["card_id"] = card_id
+
+    if transaction_id:
+        result["transaction_id"] = transaction_id
+
+    # ---------------------------------------------------------------
+    # Build locally available evidence.
+    # ---------------------------------------------------------------
+    transaction_evidence = _build_transaction_context_evidence(
+        transaction
+    )
+
+    identity_evidence = _build_identity_evidence(
+        transaction
+    )
+
+    customer_evidence = _build_customer_evidence(
+        customer_id=customer_id,
+        card_id=card_id,
+    )
+
+    new_evidence = [
+        *transaction_evidence,
+        *identity_evidence,
+        *customer_evidence,
+    ]
+
+    # ---------------------------------------------------------------
+    # Include evidence already gathered by graph/history retrievers.
+    # ---------------------------------------------------------------
+    graph_evidence = _extract_existing_graph_evidence(
+        result
+    )
+
+    historical_evidence = _extract_existing_historical_evidence(
+        result
+    )
+
+    new_evidence.extend(graph_evidence)
+    new_evidence.extend(historical_evidence)
+
+    existing_evidence = [
+        item
+        for item in (result.get("evidence") or [])
+        if isinstance(item, dict)
+    ]
+
+    merged_evidence = _append_unique_evidence(
+        existing_evidence,
+        new_evidence,
+    )
+
+    result["evidence"] = merged_evidence
+
+    result["evidence_ids"] = [
+        str(item["evidence_id"])
+        for item in merged_evidence
+        if item.get("evidence_id") is not None
+    ]
+
+    # ---------------------------------------------------------------
+    # Keep separate evidence buckets for downstream reasoning.
+    # ---------------------------------------------------------------
+    result["graph_evidence"] = graph_evidence
+    result["historical_evidence"] = historical_evidence
+
+    # ---------------------------------------------------------------
+    # Record evidence summary.
+    # ---------------------------------------------------------------
+    evidence_sources: dict[str, int] = {}
+
+    for item in merged_evidence:
+        source_type = str(
+            item.get("source_type") or "UNKNOWN"
+        )
+
+        evidence_sources[source_type] = (
+            evidence_sources.get(source_type, 0) + 1
+        )
+
+    result["evidence_summary"] = {
+        "total": len(merged_evidence),
+        "sources": evidence_sources,
+        "transaction_id": transaction_id,
+        "customer_id": customer_id,
+        "card_id": card_id,
+    }
+
+    # ---------------------------------------------------------------
+    # Evidence sufficiency is deliberately conservative.
+    #
+    # Having a bank risk score alone is NOT enough.
+    # At this stage we want multiple independent evidence sources.
+    # ---------------------------------------------------------------
+    independent_sources = set()
+
+    for item in merged_evidence:
+        source_type = item.get("source_type")
+
+        if source_type:
+            independent_sources.add(
+                str(source_type)
             )
 
-        return "; ".join(parts)
+    has_transaction = (
+        "TRANSACTION" in independent_sources
+    )
 
-    @staticmethod
-    def _estimate_node_confidence(
-        node: GraphNode,
-        trigger: dict[str, Any],
-    ) -> float:
-        """Estimate confidence in node-derived evidence."""
-        properties = node.properties or {}
-
-        confidence = 0.60
-
-        if (
-            trigger.get("transaction_id")
-            == node.node_id
-            or trigger.get("customer_id")
-            == node.node_id
-            or trigger.get("account_id")
-            == node.node_id
-        ):
-            confidence = 0.90
-
-        if (
-            properties.get("isFraud") == 1
-            or properties.get("is_flagged") is True
-        ):
-            confidence = min(
-                1.0,
-                confidence + 0.20,
-            )
-
-        risk_score = properties.get(
-            "risk_score",
+    has_identity = bool(
+        independent_sources.intersection(
+            {
+                "DEVICE",
+                "CONNECTION",
+                "ACCOUNT",
+                "CUSTOMER",
+            }
         )
+    )
 
-        if risk_score is not None:
-            try:
-                confidence = min(
-                    1.0,
-                    confidence
-                    + float(risk_score) * 0.15,
-                )
-            except (
-                TypeError,
-                ValueError,
-            ):
-                pass
+    has_graph = "GRAPH" in independent_sources
+    has_history = (
+        "HISTORICAL_CASE" in independent_sources
+        or bool(historical_evidence)
+    )
 
-        return round(
-            confidence,
-            3,
+    sufficient = (
+        len(independent_sources) >= 3
+        or (
+            has_transaction
+            and has_identity
+            and (has_graph or has_history)
         )
+    )
 
-    @staticmethod
-    def _estimate_relevance(
-        node: GraphNode,
-        trigger: dict[str, Any],
-    ) -> float:
-        """Estimate relevance of graph evidence."""
-        if (
-            trigger.get("transaction_id")
-            == node.node_id
-            or trigger.get("customer_id")
-            == node.node_id
-            or trigger.get("account_id")
-            == node.node_id
-        ):
-            return 1.0
+    result["evidence_sufficient"] = sufficient
 
-        type_relevance = {
-            "Transaction": 0.90,
-            "FraudPattern": 0.90,
-            "Case": 0.80,
-            "Device": 0.70,
-            "IP": 0.70,
-            "Card": 0.65,
-            "Customer": 0.60,
-            "Merchant": 0.50,
-            "Address": 0.40,
-            "Email": 0.40,
+    # Do not automatically request customer verification here.
+    # Later uncertainty/policy stages decide whether additional
+    # evidence is actually required.
+    result["requires_additional_evidence"] = not sufficient
+
+    if not sufficient:
+        result["required_evidence"] = [
+            *list(result.get("required_evidence") or []),
+            "additional independent transaction/entity evidence",
+        ]
+
+    # ---------------------------------------------------------------
+    # Event
+    # ---------------------------------------------------------------
+    now = _utc_now()
+
+    events = list(result.get("events") or [])
+
+    events.append(
+        {
+            "event_id": (
+                f"evidence-{transaction_id or 'unknown'}-{now}"
+            ),
+            "event_type": "EVIDENCE_FOUND",
+            "investigation_id": result.get(
+                "investigation_id"
+            ),
+            "case_id": result.get("case_id"),
+            "stage": "GATHER_EVIDENCE",
+            "message": (
+                f"Collected {len(merged_evidence)} evidence items "
+                f"from {len(independent_sources)} source types."
+            ),
+            "payload": {
+                "transaction_id": transaction_id,
+                "customer_id": customer_id,
+                "card_id": card_id,
+                "evidence_count": len(merged_evidence),
+                "independent_sources": sorted(
+                    independent_sources
+                ),
+                "evidence_sufficient": sufficient,
+                "requires_additional_evidence": (
+                    not sufficient
+                ),
+            },
+            "created_at": now,
         }
+    )
 
-        return type_relevance.get(
-            node.node_type,
-            0.30,
-        )
+    result["events"] = events
+
+    result["progress"] = max(
+        float(result.get("progress") or 0.0),
+        0.35,
+    )
+
+    return result
 
 
-def gather_evidence_node(
-    state: AgentRuntimeState,
-    settings: Settings,
-) -> AgentRuntimeState:
-    """Functional wrapper for the evidence node."""
-    return GatherEvidenceNode(
-        settings=settings,
-    ).run(state)
+def run(state: dict[str, Any]) -> dict[str, Any]:
+    return gather_evidence(state)

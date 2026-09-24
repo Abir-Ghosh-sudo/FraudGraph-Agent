@@ -18,6 +18,9 @@ tenacity<10.0,>=9.0
 uuid6>=2024.7.10
 PyJWT<3.0,>=2.9
 pwdlib[argon2]<1.0,>=0.2
+scikit-learn>=1.9.1
+lightgbm>=4.7.0
+joblib>=1.6.0
 
 [dev]
 pytest<9.0,>=8.3

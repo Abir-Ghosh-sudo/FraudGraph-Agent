@@ -128,6 +128,9 @@ backend/risk/uncertainty.py
 backend/sar/formatter.py
 backend/sar/generator.py
 backend/sar/policy_check.py
+backend/tests/unit/test_config.py
+backend/tests/unit/test_schemas.py
+backend/tests/unit/test_state.py
 backend/tigergraph/client.py
 backend/tigergraph/loader.py
 backend/tigergraph/mcp.py

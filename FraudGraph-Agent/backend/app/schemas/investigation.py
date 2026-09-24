@@ -143,6 +143,42 @@ class InvestigationAssessment(BaseModel):
 
     rationale: str | None = None
 
+    bank_risk_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+    )
+
+    ml_fraud_probability: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+    )
+
+    ml_used: bool = False
+
+    ml_model_version: str | None = None
+
+    graph_evidence_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+    )
+
+    pattern_evidence_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+    )
+
+    historical_case_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+    )
+
+    trigger_type: str | None = None
+
 
 class InvestigationResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
