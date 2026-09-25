@@ -98,6 +98,60 @@ async function request<T>(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Root-scoped API methods                                                     */
+/*                                                                             */
+/* A small number of backend routes are mounted at the application root       */
+/* rather than under the /api/v1 router (currently /health and                 */
+/* /health/readiness). Those must not be prefixed with API_BASE_URL or they    */
+/* resolve to /api/v1/health and return 404.                                   */
+/* -------------------------------------------------------------------------- */
+
+const API_ROOT_URL = (
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") || "http://localhost:8000"
+).replace(/\/api\/v1$/, "");
+
+function buildRootUrl(
+  path: string,
+  query?: Record<string, QueryValue>,
+): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const url = new URL(`${API_ROOT_URL}${normalizedPath}`);
+
+  if (query) {
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== null && value !== "") {
+        url.searchParams.set(key, String(value));
+      }
+    }
+  }
+
+  return url.toString();
+}
+
+export const rootApi = {
+  get<T>(
+    path: string,
+    query?: Record<string, QueryValue>,
+  ): Promise<T> {
+    return fetch(buildRootUrl(path, query), {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    }).then(async (response) => {
+      if (!response.ok) {
+        const details = await parseResponse(response).catch(() => null);
+        throw new ApiError(
+          response.status,
+          `Request to ${path} failed with status ${response.status}`,
+          details,
+        );
+      }
+
+      return (await parseResponse(response)) as T;
+    });
+  },
+};
+
+/* -------------------------------------------------------------------------- */
 /* Generic API methods                                                        */
 /* -------------------------------------------------------------------------- */
 
@@ -305,42 +359,102 @@ export const evidenceApi = {
 /* -------------------------------------------------------------------------- */
 
 export const graphApi = {
+  health<T = unknown>(): Promise<T> {
+    return api.get<T>("/graph/health");
+  },
+
+  queries<T = unknown>(): Promise<T> {
+    return api.get<T>("/graph/queries");
+  },
+
+  describeQuery<T = unknown>(queryName: string): Promise<T> {
+    return api.get<T>(`/graph/queries/${encodeURIComponent(queryName)}`);
+  },
+
+  query<T = unknown>(payload: {
+    query_name: string;
+    parameters?: Record<string, unknown>;
+    limit?: number;
+  }): Promise<T> {
+    return api.post<T>("/graph/query", payload);
+  },
+
+  investigation<T = unknown>(
+    nodeId: string,
+    params?: { query_name?: string; depth?: number; limit?: number },
+  ): Promise<T> {
+    return api.get<T>(`/graph/investigation/${encodeURIComponent(nodeId)}`, {
+      query_name: params?.query_name || "investigate_entity",
+      depth: params?.depth ?? 2,
+      limit: params?.limit ?? 100,
+    });
+  },
+
+  evidence<T = unknown>(payload: {
+    query_name: string;
+    parameters?: Record<string, unknown>;
+    limit?: number;
+  }): Promise<T> {
+    return api.post<T>("/graph/evidence", payload);
+  },
+
   get<T = unknown>(params?: Record<string, QueryValue>): Promise<T> {
-    return api.get<T>("/graph", params);
+    const target =
+      params?.node_id ||
+      params?.customer_id ||
+      params?.transaction_id ||
+      params?.account_id ||
+      params?.target;
+
+    if (typeof target === "string" && target.trim()) {
+      return graphApi.investigation<T>(target.trim(), {
+        depth: typeof params?.depth === "number" ? params.depth : 2,
+      });
+    }
+
+    return api.get<T>("/graph/health", params);
   },
 };
 
+
 /* -------------------------------------------------------------------------- */
 /* Actions                                                                    */
+/*                                                                             */
+/* The backend exposes only these action routes:                                */
+/*   GET  /actions/investigation/{investigation_id}  -> ActionPlan             */
+/*   GET  /actions/{action_id}                       -> NextBestAction         */
+/*   GET  /actions/approvals/{approval_id}           -> ApprovalRequest        */
+/*   POST /actions/execute                            -> ActionExecutionResult  */
+/* There is deliberately no GET /actions collection endpoint.                  */
 /* -------------------------------------------------------------------------- */
 
 export const actionsApi = {
-  list<T = unknown>(params?: Record<string, QueryValue>): Promise<T> {
-    return api.get<T>("/actions", params);
+  /** Action plan (including the next-best action) for one investigation. */
+  planForInvestigation<T = unknown>(investigationId: string): Promise<T> {
+    return api.get<T>(
+      `/actions/investigation/${encodeURIComponent(investigationId)}`,
+    );
   },
 
   get<T = unknown>(actionId: string): Promise<T> {
-    return api.get<T>(
-      `/actions/${encodeURIComponent(actionId)}`,
-    );
+    return api.get<T>(`/actions/${encodeURIComponent(actionId)}`);
   },
 
-  create<T = unknown>(payload: unknown): Promise<T> {
-    return api.post<T>("/actions", payload);
+  getApproval<T = unknown>(approvalId: string): Promise<T> {
+    return api.get<T>(`/actions/approvals/${encodeURIComponent(approvalId)}`);
   },
 
-  approve<T = unknown>(actionId: string, payload?: unknown): Promise<T> {
-    return api.post<T>(
-      `/actions/${encodeURIComponent(actionId)}/approve`,
-      payload,
-    );
-  },
-
-  execute<T = unknown>(actionId: string, payload?: unknown): Promise<T> {
-    return api.post<T>(
-      `/actions/${encodeURIComponent(actionId)}/execute`,
-      payload,
-    );
+  /**
+   * Request server-side execution. The backend fails closed: without a
+   * registered provider handler and, where required, a server-side approval
+   * bound to this action, it returns success=false. Never treat a 200 as a
+   * completed action.
+   */
+  execute<T = unknown>(payload: {
+    action_id: string;
+    approval_id?: string;
+  }): Promise<T> {
+    return api.post<T>("/actions/execute", payload);
   },
 };
 
@@ -363,8 +477,18 @@ export const benchmarkApi = {
 /* -------------------------------------------------------------------------- */
 
 export const healthApi = {
+  /** Liveness probe. Mounted at the server root, NOT under /api/v1. */
   check<T = unknown>(): Promise<T> {
-    return api.get<T>("/health");
+    return rootApi.get<T>("/health");
+  },
+
+  /**
+   * Readiness probe reporting which subsystems are actually configured
+   * (tigergraph_configured, llm_configured, vector_store_configured).
+   * Also mounted at the server root.
+   */
+  readiness<T = unknown>(): Promise<T> {
+    return rootApi.get<T>("/health/readiness");
   },
 };
 

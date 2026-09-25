@@ -7,7 +7,7 @@ from backend.ml.transaction_loader import TransactionRecordLoader
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _clean_id(value: Any) -> str | None:

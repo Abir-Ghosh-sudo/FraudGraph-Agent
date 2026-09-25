@@ -1,27 +1,47 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useHealthStatus } from "@/hooks/use-dashboard";
 
 interface BloopaHeaderProps {
   onOpenDossier: () => void;
   onOpenConsole: () => void;
+  onOpenGraph?: () => void;
   activeCasesCount?: number;
 }
 
 export function BloopaHeader({
   onOpenDossier,
   onOpenConsole,
+  onOpenGraph,
   activeCasesCount = 0,
 }: BloopaHeaderProps) {
   const { health } = useHealthStatus(10000);
+  const pathname = usePathname();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const navLinks = [
+    { label: "Investigations", href: "/investigations" },
+    { label: "Graph Explorer", href: "/graph", isGraph: true },
+    { label: "Evidence Wall", href: "/evidence" },
+    { label: "Benchmark", href: "/benchmark" },
+  ];
+
+  const handleGraphClick = (e: React.MouseEvent) => {
+    if (onOpenGraph) {
+      e.preventDefault();
+      onOpenGraph();
+      setMobileMenuOpen(false);
+    }
+  };
 
   return (
     <header className="w-full relative z-40 select-none">
       {/* 1. Top Announcement Bar (Black) */}
       <div className="w-full bg-[#050505] text-white border-b-2 border-black py-1.5 px-3 sm:px-6">
-        <div className="max-w-[1340px] mx-auto flex items-center justify-between text-xs sm:text-sm font-mono font-bold tracking-tight">
+        <div className="max-w-[1440px] mx-auto flex items-center justify-between text-xs sm:text-sm font-mono font-bold tracking-tight">
           {/* Left Badges */}
           <div className="flex items-center gap-2">
             <span className="px-2 py-0.5 rounded border border-[#75d89a] text-[10px] sm:text-xs text-[#b9f5cf] font-mono font-bold">
@@ -61,25 +81,23 @@ export function BloopaHeader({
       </div>
 
       {/* 2. Main Brutalist Nav Container */}
-      <div className="max-w-[1340px] mx-auto px-3 sm:px-6 pt-4 pb-2">
+      <div className="max-w-[1440px] mx-auto px-3 sm:px-6 pt-4 pb-2">
         <nav
           aria-label="FraudGraph Main Navigation"
-          className="w-full bg-white border-[3px] sm:border-[4px] border-black shadow-[6px_6px_0_#050505] sm:shadow-[8px_8px_0_#050505] p-2.5 sm:p-3.5 flex items-center justify-between gap-2 sm:gap-4 flex-wrap"
+          className="w-full bg-white border-[3px] sm:border-[4px] border-black shadow-[6px_6px_0_#050505] sm:shadow-[8px_8px_0_#050505] p-2.5 sm:p-3.5 flex items-center justify-between gap-2 sm:gap-4 flex-wrap relative"
         >
           {/* Left Brand: FG* icon + FraudGraph */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <Link
               href="/"
-              className="flex items-center gap-2 group cursor-pointer focus:outline-none"
+              className="flex items-center gap-2 group cursor-pointer focus:outline-none min-w-0"
             >
-              {/* Yellow Square FG* */}
-              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-[#ffe45c] border-[3px] border-black flex items-center justify-center shadow-[2px_2px_0_#050505] group-hover:translate-x-[1px] group-hover:translate-y-[1px] group-hover:shadow-[1px_1px_0_#050505] transition-all">
-                <span className="font-syne font-black text-lg sm:text-xl text-black tracking-tighter">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 shrink-0 bg-[#ffe45c] border-[3px] border-black flex items-center justify-center shadow-[2px_2px_0_#050505] group-hover:translate-x-[1px] group-hover:translate-y-[1px] group-hover:shadow-[1px_1px_0_#050505] transition-all">
+                <span className="font-syne font-black text-base sm:text-xl text-black tracking-tighter">
                   FG*
                 </span>
               </div>
-              {/* Brand text */}
-              <span className="font-syne font-black text-2xl sm:text-3xl text-black tracking-tight">
+              <span className="font-syne font-black text-xl sm:text-2xl lg:text-3xl text-black tracking-tight truncate min-w-0">
                 FraudGraph
               </span>
             </Link>
@@ -88,55 +106,69 @@ export function BloopaHeader({
             <button
               type="button"
               onClick={onOpenDossier}
-              className="ml-1 sm:ml-2 bg-white hover:bg-[#fafafa] active:translate-x-[1px] active:translate-y-[1px] border-[2px] border-black px-2.5 sm:px-3 py-1 text-xs font-mono font-black uppercase tracking-wider shadow-[2px_2px_0_#050505] inline-flex items-center gap-1.5 transition-transform cursor-pointer"
+              className="shrink-0 ml-1 sm:ml-2 bg-white hover:bg-[#fafafa] active:translate-x-[1px] active:translate-y-[1px] border-[2px] border-black px-2 sm:px-3 py-1 text-[10px] sm:text-xs font-mono font-black uppercase tracking-wider shadow-[2px_2px_0_#050505] inline-flex items-center gap-1.5 transition-transform cursor-pointer"
             >
-              <span>📄</span>
-              <span>DOCS</span>
+              <span aria-hidden="true">📄</span>
+              <span className="hidden xs:inline">DOCS</span>
             </button>
           </div>
 
-          {/* Center Navigation Links for Real App Views */}
+          {/* Center Navigation Links for Real App Views (Desktop) */}
           <div className="hidden lg:flex items-center gap-2">
-            <Link
-              href="/investigations"
-              className="px-2.5 py-1 text-xs font-mono font-bold uppercase border-2 border-transparent hover:border-black hover:bg-[#f7f4ea] transition-all"
-            >
-              Investigations
-            </Link>
-            <Link
-              href="/graph"
-              className="px-2.5 py-1 text-xs font-mono font-bold uppercase border-2 border-transparent hover:border-black hover:bg-[#f7f4ea] transition-all"
-            >
-              Graph Explorer
-            </Link>
-            <Link
-              href="/evidence"
-              className="px-2.5 py-1 text-xs font-mono font-bold uppercase border-2 border-transparent hover:border-black hover:bg-[#f7f4ea] transition-all"
-            >
-              Evidence Wall
-            </Link>
-            <Link
-              href="/benchmark"
-              className="px-2.5 py-1 text-xs font-mono font-bold uppercase border-2 border-transparent hover:border-black hover:bg-[#f7f4ea] transition-all"
-            >
-              Benchmark
-            </Link>
+            {navLinks.map((link) => {
+              const isActive = pathname === link.href;
+              if (link.isGraph && onOpenGraph) {
+                return (
+                  <button
+                    key={link.label}
+                    type="button"
+                    onClick={handleGraphClick}
+                    className={`px-2.5 py-1 text-xs font-mono font-bold uppercase border-2 transition-all cursor-pointer ${
+                      isActive
+                        ? "bg-[#b9f5cf] border-black shadow-[2px_2px_0_#050505]"
+                        : "border-transparent hover:border-black hover:bg-[#f7f4ea]"
+                    }`}
+                  >
+                    {link.label}
+                  </button>
+                );
+              }
+
+              return (
+                <Link
+                  key={link.label}
+                  href={link.href}
+                  className={`px-2.5 py-1 text-xs font-mono font-bold uppercase border-2 transition-all ${
+                    isActive
+                      ? "bg-[#b9f5cf] border-black shadow-[2px_2px_0_#050505]"
+                      : "border-transparent hover:border-black hover:bg-[#f7f4ea]"
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
           </div>
 
           {/* Right Action Group */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* TigerGraph Network Status Pill */}
-            <div className="bg-[#f7f4ea] border-[2px] border-black px-3 py-1.5 rounded-none flex items-center gap-2 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider shadow-[2px_2px_0_#050505]">
+            {/* GRAPH Button (Section 5 Requirement: Clickable GRAPH button) */}
+            <button
+              type="button"
+              onClick={onOpenGraph ? onOpenGraph : undefined}
+              className="bg-[#f7f4ea] hover:bg-[#ffe45c] active:translate-x-[1px] active:translate-y-[1px] border-[2px] border-black px-3 py-1.5 rounded-none flex items-center gap-2 text-[11px] sm:text-xs font-mono font-black uppercase tracking-wider shadow-[2px_2px_0_#050505] cursor-pointer transition-colors"
+              title="Open TigerGraph Topology Explorer"
+            >
               <span
                 className={`w-2.5 h-2.5 rounded-full border border-black inline-block ${
-                  health.graph ? "bg-[#9cc9ff]" : "bg-[#ffe45c]"
+                  health.graph ? "bg-[#22c55e]" : "bg-[#ffe45c]"
                 }`}
               />
-              <span className="hidden xs:inline">
-                {health.graph ? "TIGERGRAPH ONLINE" : "GRAPH CLUSTER"}
+              <span className="hidden xs:inline">GRAPH</span>
+              <span className="hidden md:inline text-[10px] text-neutral-600 font-bold">
+                {health.graph ? "ONLINE" : "STANDBY"}
               </span>
-              <span className="xs:hidden">GRAPH</span>
-            </div>
+            </button>
 
             {/* Launch Investigation / Open Console Button */}
             <button
@@ -151,7 +183,47 @@ export function BloopaHeader({
                 </span>
               )}
             </button>
+
+            {/* Mobile Hamburger Toggle */}
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="lg:hidden w-9 h-9 bg-white border-[2px] border-black flex items-center justify-center font-mono font-bold text-sm shadow-[2px_2px_0_#050505] cursor-pointer"
+              aria-label="Toggle navigation menu"
+            >
+              {mobileMenuOpen ? "✕" : "☰"}
+            </button>
           </div>
+
+          {/* Mobile Navigation Dropdown */}
+          {mobileMenuOpen && (
+            <div className="w-full lg:hidden pt-3 mt-2 border-t-2 border-black flex flex-col gap-2">
+              {navLinks.map((link) => {
+                if (link.isGraph && onOpenGraph) {
+                  return (
+                    <button
+                      key={link.label}
+                      type="button"
+                      onClick={handleGraphClick}
+                      className="text-left py-2 px-3 bg-[#f7f4ea] hover:bg-[#ffe45c] border border-black font-mono text-xs font-black uppercase"
+                    >
+                      {link.label} →
+                    </button>
+                  );
+                }
+                return (
+                  <Link
+                    key={link.label}
+                    href={link.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="py-2 px-3 bg-[#f7f4ea] hover:bg-[#ffe45c] border border-black font-mono text-xs font-black uppercase"
+                  >
+                    {link.label} →
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </nav>
       </div>
     </header>

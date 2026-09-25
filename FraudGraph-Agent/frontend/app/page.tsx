@@ -7,12 +7,11 @@ import { BloopaTicker } from "@/components/bloopa/BloopaTicker";
 import { BloopaStats } from "@/components/bloopa/BloopaStats";
 import { BloopaFeatures } from "@/components/bloopa/BloopaFeatures";
 import { BloopaProtocolSection } from "@/components/bloopa/BloopaProtocolSection";
-import { BloopaBottomBar } from "@/components/bloopa/BloopaBottomBar";
 import { RealCaseDossierModal } from "@/components/bloopa/RealCaseDossierModal";
 import { ProtocolModal } from "@/components/bloopa/ProtocolModal";
-import { ContractModal } from "@/components/bloopa/ContractModal";
 import { DocsModal } from "@/components/bloopa/DocsModal";
 import { WalletModal } from "@/components/bloopa/WalletModal";
+import { GraphExplorerModal } from "@/components/graph/GraphExplorerModal";
 import { useDashboardStats } from "@/hooks/use-dashboard";
 import Link from "next/link";
 
@@ -22,9 +21,10 @@ export default function Home() {
   // Modals state
   const [dossierModalOpen, setDossierModalOpen] = useState(false);
   const [protocolModalOpen, setProtocolModalOpen] = useState(false);
-  const [contractModalOpen, setContractModalOpen] = useState(false);
   const [docsModalOpen, setDocsModalOpen] = useState(false);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [graphModalOpen, setGraphModalOpen] = useState(false);
+  const [graphTarget, setGraphTarget] = useState<string>("C12382");
 
   // Simulated Agent Wallet connection
   const [walletConnected, setWalletConnected] = useState(true);
@@ -50,17 +50,25 @@ export default function Home() {
     setProtocolModalOpen(true);
   };
 
+  const handleOpenGraphWithTarget = (targetId?: string) => {
+    if (targetId) {
+      setGraphTarget(targetId);
+    }
+    setGraphModalOpen(true);
+  };
+
   return (
-    <div className="min-h-screen bg-[#f7f4ea] text-black flex flex-col font-sans selection:bg-[#ffe45c] selection:text-black">
+    <div className="min-h-screen w-full max-w-full bg-[#f7f4ea] text-black flex flex-col font-sans selection:bg-[#ffe45c] selection:text-black">
       {/* 1. Header (Top Announcement Bar + Main Nav Box) */}
       <BloopaHeader
         onOpenDossier={() => setDocsModalOpen(true)}
         onOpenConsole={() => setProtocolModalOpen(true)}
+        onOpenGraph={() => handleOpenGraphWithTarget()}
         activeCasesCount={stats.activeCases}
       />
 
       {/* 2. Hero Section (Paper Collage + Stacked Typography) */}
-      <main className="flex-1">
+      <main className="flex-1 w-full max-w-full min-w-0 overflow-x-clip">
         <BloopaHero
           onLaunchInvestigation={() => setProtocolModalOpen(true)}
           onViewDossier={() => setDossierModalOpen(true)}
@@ -85,7 +93,7 @@ export default function Home() {
         />
 
         {/* Direct Access Bar to Full Investigations & Graph Engine */}
-        <section className="max-w-[1240px] mx-auto px-4 sm:px-6 pb-12 pt-4">
+        <section className="max-w-[1440px] mx-auto px-4 sm:px-6 pb-12 pt-4">
           <div className="bg-white border-[3px] border-black p-5 sm:p-6 shadow-[6px_6px_0_#050505] flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <span className="sticker sticker-mint text-xs font-mono font-bold">
@@ -101,35 +109,31 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <Link
                 href="/investigations"
                 className="bg-[#ffe45c] hover:bg-[#fed932] border-[2.5px] border-black px-4 py-2 font-mono font-black text-xs uppercase shadow-[3px_3px_0_#050505] transition-transform active:translate-x-[1px] active:translate-y-[1px]"
               >
                 INVESTIGATIONS ({stats.activeCases || 4}) →
               </Link>
-              <Link
-                href="/graph"
-                className="bg-white hover:bg-neutral-100 border-[2.5px] border-black px-4 py-2 font-mono font-black text-xs uppercase shadow-[3px_3px_0_#050505] transition-transform active:translate-x-[1px] active:translate-y-[1px]"
+              <button
+                type="button"
+                onClick={() => handleOpenGraphWithTarget()}
+                className="bg-white hover:bg-neutral-100 border-[2.5px] border-black px-4 py-2 font-mono font-black text-xs uppercase shadow-[3px_3px_0_#050505] transition-transform active:translate-x-[1px] active:translate-y-[1px] cursor-pointer"
               >
                 GRAPH VIEW →
-              </Link>
+              </button>
             </div>
           </div>
         </section>
       </main>
-
-      {/* 8. Bottom Sticky Status Bar */}
-      <BloopaBottomBar
-        walletConnected={walletConnected}
-        onOpenContract={() => setContractModalOpen(true)}
-      />
 
       {/* Interactive Modals */}
       <RealCaseDossierModal
         isOpen={dossierModalOpen}
         onClose={() => setDossierModalOpen(false)}
         onShowToast={showToast}
+        onOpenGraph={handleOpenGraphWithTarget}
       />
 
       <ProtocolModal
@@ -142,9 +146,11 @@ export default function Home() {
         onSuccessToast={showToast}
       />
 
-      <ContractModal
-        isOpen={contractModalOpen}
-        onClose={() => setContractModalOpen(false)}
+      <GraphExplorerModal
+        isOpen={graphModalOpen}
+        onClose={() => setGraphModalOpen(false)}
+        initialTarget={graphTarget}
+        onShowToast={showToast}
       />
 
       <DocsModal
@@ -181,7 +187,7 @@ export default function Home() {
           <button
             type="button"
             onClick={() => setToastMessage(null)}
-            className="text-xs font-bold font-mono hover:text-red-700 ml-2"
+            className="text-xs font-bold font-mono hover:text-red-700 ml-2 cursor-pointer"
           >
             ✕
           </button>

@@ -114,6 +114,7 @@ class CaseService:
         *,
         investigation_id: str | None = None,
         status: CaseStatus | None = None,
+        risk_level: RiskLevel | None = None,
     ) -> list[Case]:
         cases = list(self._cases.values())
 
@@ -122,6 +123,9 @@ class CaseService:
 
         if status:
             cases = [c for c in cases if c.status == status]
+
+        if risk_level:
+            cases = [c for c in cases if c.risk_level == risk_level]
 
         return sorted(cases, key=lambda c: c.created_at, reverse=True)
 

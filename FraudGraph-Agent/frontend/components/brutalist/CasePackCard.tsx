@@ -15,56 +15,27 @@ interface ActionStates {
   wire: "idle" | "executing" | "executed";
 }
 
-// Fallback demo case data when backend returns no cases
-const DEMO_CASE: Partial<Case> & {
+interface CaseView {
   case_id: string;
   title: string;
   riskLabel: string;
-  atRiskCapital: string;
-  flaggedVertices: number;
-  graphCentrality: string;
-  agentConfidence: string;
-  evidenceItems: { id: string; color: string; label: string; detail: string }[];
+  evidenceCount: number;
+  riskPercent: string;
   primaryTarget: string;
-} = {
-  case_id: "FG-9082",
-  title: "MULE CONVERGENCE SYNDICATE",
-  riskLabel: "CONFIRMED FRAUD: 94%",
-  atRiskCapital: "$4,829,120",
-  flaggedVertices: 14,
-  graphCentrality: "0.89 PR",
-  agentConfidence: "98.4%",
-  primaryTarget: "ACCOUNTS #N-8901 / #N-3319 / #N-4092 · JURISDICTION: MULTI-REGIONAL",
-  evidenceItems: [
-    {
-      id: "01",
-      color: "var(--red)",
-      label: "Cyclic Smurfing Topology:",
-      detail: "4 transfers totaling $980,000 sent in rapid succession (<4m interval) forming a closed loop back to offshore wallet 0x9f..4a.",
-    },
-    {
-      id: "02",
-      color: "var(--orange)",
-      label: "Synthetic Identity Match:",
-      detail: "Social Security Number collision on account #N-3319 verified against Death Master File index.",
-    },
-    {
-      id: "03",
-      color: "var(--sky)",
-      label: "Device Fingerprint Overlap:",
-      detail: "IMEI #3901-88-291 logged into 6 distinct account logins across 3 VPN exit nodes in 45 minutes.",
-    },
-  ],
-};
+  evidenceItems: { id: string; color: string; label: string; detail: string }[];
+}
 
 function formatTimestamp(iso: string | undefined): string {
-  if (!iso) return new Date().toISOString().replace("T", "T").slice(0, 19) + "Z";
+  if (!iso) return "—";
   return iso.slice(0, 19).replace("T", "T") + "Z";
 }
 
 function formatRiskLabel(c: Case): string {
   if (c.risk_score !== null && c.risk_score !== undefined) {
     return `RISK SCORE: ${Math.round((c.risk_score as number) * 100)}%`;
+  }
+  if (c.risk_level) {
+    return `RISK: ${c.risk_level.toUpperCase()}`;
   }
   return `STATUS: ${c.status.toUpperCase()}`;
 }
@@ -76,13 +47,15 @@ export function CasePackCard({ onAction, onOpenModal }: CasePackCardProps) {
     wire: "idle",
   });
 
-  const [topCase, setTopCase] = useState<typeof DEMO_CASE | null>(null);
+  const [topCase, setTopCase] = useState<CaseView | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadTopCase() {
       setLoading(true);
+      setLoadError(null);
       try {
         const cases = await casesApi.list<Case[]>();
         const arr = Array.isArray(cases) ? cases : [];
@@ -105,26 +78,30 @@ export function CasePackCard({ onAction, onOpenModal }: CasePackCardProps) {
             case_id: c.case_id.slice(0, 10).toUpperCase(),
             title: c.title.toUpperCase(),
             riskLabel: formatRiskLabel(c),
-            atRiskCapital: c.risk_score ? `$${Math.round((c.risk_score as number) * 5_000_000).toLocaleString()}` : "$—",
-            flaggedVertices: c.evidence_ids.length || c.findings.length || 0,
-            graphCentrality: "0.89 PR",
-            agentConfidence: c.risk_score ? `${Math.round((c.risk_score as number) * 100)}%` : "—",
+            evidenceCount: c.evidence_ids?.length ?? c.findings?.length ?? 0,
+            riskPercent:
+              typeof c.risk_score === "number"
+                ? `${Math.round(c.risk_score * 100)}%`
+                : "—",
             primaryTarget: c.customer_id
-              ? `CUSTOMER: ${c.customer_id} · ${c.account_id ?? ""}`.trim()
-              : c.description ?? "MULTI-ACCOUNT SYNDICATE",
-            evidenceItems: c.findings.slice(0, 3).map((f, i) => ({
+              ? `CUSTOMER: ${c.customer_id}${c.account_id ? ` · ${c.account_id}` : ""}`
+              : (c.description ?? "—"),
+            evidenceItems: (c.findings ?? []).slice(0, 3).map((f, i) => ({
               id: String(i + 1).padStart(2, "0"),
               color: ["var(--red)", "var(--orange)", "var(--sky)"][i] ?? "var(--mint)",
-              label: f.title + ":",
+              label: `${f.title}:`,
               detail: f.description,
             })),
           });
         } else {
-          // Use demo data when no cases
-          setTopCase(DEMO_CASE);
+          // No open cases. Show an honest empty state rather than inventing one.
+          setTopCase(null);
         }
-      } catch {
-        setTopCase(DEMO_CASE);
+      } catch (err) {
+        setTopCase(null);
+        setLoadError(
+          err instanceof Error ? err.message : "Failed to load cases.",
+        );
       } finally {
         setLoading(false);
       }
@@ -132,36 +109,40 @@ export function CasePackCard({ onAction, onOpenModal }: CasePackCardProps) {
     void loadTopCase();
   }, []);
 
-  const data = topCase ?? DEMO_CASE;
+  const handleAction = async (
+    key: keyof ActionStates,
+    label: string,
+    actionType: string,
+  ) => {
+    if (!activeCaseId) {
+      onAction(`✗ ${label} unavailable — no active case loaded.`);
+      return;
+    }
 
-  const handleAction = async (key: keyof ActionStates, label: string, actionType: string) => {
     setActionStates((prev) => ({ ...prev, [key]: "executing" }));
     try {
-      if (activeCaseId) {
-        await casesApi.addAction(activeCaseId, {
-          action_id: `act_${Date.now()}`,
-          action_type: actionType,
-          status: "executed",
-          rationale: `Analyst executed: ${label}`,
-          requires_approval: false,
-          result: {},
-        });
-      }
-      setTimeout(() => {
-        setActionStates((prev) => ({ ...prev, [key]: "executed" }));
-        onAction(`✓ Action Executed: ${label}`);
-      }, 700);
-    } catch {
-      setTimeout(() => {
-        setActionStates((prev) => ({ ...prev, [key]: "executed" }));
-        onAction(`✓ Action Executed: ${label}`);
-      }, 700);
+      await casesApi.addAction(activeCaseId, {
+        action_id: `act_${Date.now()}`,
+        action_type: actionType,
+        status: "executed",
+        rationale: `Analyst executed: ${label}`,
+        requires_approval: false,
+        result: {},
+      });
+      setActionStates((prev) => ({ ...prev, [key]: "executed" }));
+      onAction(`✓ Action Executed: ${label}`);
+    } catch (err) {
+      // Surface the real failure. Never report success on a rejected request.
+      setActionStates((prev) => ({ ...prev, [key]: "idle" }));
+      onAction(
+        `✗ ${label} failed: ${
+          err instanceof Error ? err.message : "unknown error"
+        }`,
+      );
     }
   };
 
-  const evidenceItems = (data.evidenceItems && data.evidenceItems.length > 0)
-    ? data.evidenceItems
-    : DEMO_CASE.evidenceItems;
+  const evidenceItems = topCase?.evidenceItems ?? [];
 
   return (
     <div className="brutal-card p-4 sm:p-6 bg-white relative">
@@ -173,24 +154,28 @@ export function CasePackCard({ onAction, onOpenModal }: CasePackCardProps) {
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-mono text-xs font-black uppercase px-2 py-0.5 bg-[var(--yellow)] border-[2px] border-black">
-              {loading ? "LOADING..." : `CASE DOSSIER #${data.case_id}`}
+              {loading
+                ? "LOADING..."
+                : topCase
+                  ? `CASE DOSSIER #${topCase.case_id}`
+                  : "NO ACTIVE CASE"}
             </span>
             <span className="font-mono text-xs text-[var(--muted)]">
               TIMESTAMP: {formatTimestamp(undefined)}
             </span>
           </div>
           <h2 className="font-display text-3xl sm:text-4xl uppercase tracking-tight mt-1">
-            {loading ? "LOADING CASE..." : data.title}
+            {loading ? "LOADING CASE..." : (topCase?.title ?? "NO OPEN CASES")}
           </h2>
           <p className="text-xs font-mono text-[var(--muted)]">
-            PRIMARY TARGET: {loading ? "—" : data.primaryTarget}
+            PRIMARY TARGET: {loading ? "—" : (topCase?.primaryTarget ?? "—")}
           </p>
         </div>
 
         {/* Rubber Stamp */}
         <div className="flex flex-col items-end gap-2">
           <span className="stamp-seal">
-            {loading ? "LOADING..." : data.riskLabel}
+            {loading ? "LOADING..." : (topCase?.riskLabel ?? "NO DATA")}
           </span>
           <button
             onClick={onOpenModal}
@@ -201,38 +186,59 @@ export function CasePackCard({ onAction, onOpenModal }: CasePackCardProps) {
         </div>
       </div>
 
+      {loadError ? (
+        <div className="mt-4 border-[3px] border-black bg-[#ff9aa2] px-4 py-2.5 shadow-[4px_4px_0_#050505]">
+          <p className="font-mono text-[11px] font-bold uppercase text-black">
+            Could not reach the cases API: {loadError}
+          </p>
+        </div>
+      ) : null}
+
+      {!loading && !loadError && !topCase ? (
+        <div className="mt-4 border-[3px] border-black bg-[var(--paper)] px-4 py-3 shadow-[4px_4px_0_#050505]">
+          <p className="font-mono text-[11px] font-bold uppercase text-black">
+            The backend returned no open or investigating cases. Start an
+            investigation to populate this docket.
+          </p>
+        </div>
+      ) : null}
+
       {/* Risk Metrics Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-4">
         <div className="bg-[var(--paper)] border-[2px] border-black p-3">
-          <div className="font-mono text-[11px] uppercase text-[var(--muted)]">AT-RISK CAPITAL</div>
+          <div className="font-mono text-[11px] uppercase text-[var(--muted)]">CASE STATUS</div>
           <div className="font-display text-2xl text-[var(--red)]">
-            {loading ? "—" : data.atRiskCapital}
+            {loading ? "—" : topCase ? "ACTIVE" : "NONE"}
           </div>
           <div className="font-mono text-[10px] text-[var(--muted)]">
-            {activeCaseId ? "Live case data" : "Demo estimate"}
+            {activeCaseId ? "Live case data" : "Backend state"}
           </div>
         </div>
         <div className="bg-[var(--paper)] border-[2px] border-black p-3">
-          <div className="font-mono text-[11px] uppercase text-[var(--muted)]">FLAGGED VERTICES</div>
+          <div className="font-mono text-[11px] uppercase text-[var(--muted)]">EVIDENCE ITEMS</div>
           <div className="font-display text-2xl text-black">
-            {loading ? "—" : `${data.flaggedVertices} ACCOUNTS`}
+            {loading ? "—" : (topCase?.evidenceCount ?? 0)}
           </div>
-          <div className="font-mono text-[10px] text-[var(--muted)]">Evidence items</div>
+          <div className="font-mono text-[10px] text-[var(--muted)]">
+            Findings + evidence ids
+          </div>
         </div>
         <div className="bg-[var(--paper)] border-[2px] border-black p-3">
-          <div className="font-mono text-[11px] uppercase text-[var(--muted)]">GRAPH CENTRALITY</div>
+          <div className="font-mono text-[11px] uppercase text-[var(--muted)]">RISK LEVEL</div>
           <div className="font-display text-2xl text-black">
-            {loading ? "—" : data.graphCentrality}
+            {loading ? "—" : (topCase?.riskPercent ?? "—")}
           </div>
-          <div className="font-mono text-[10px] text-[var(--muted)]">PageRank score</div>
+          <div className="font-mono text-[10px] text-[var(--muted)]">
+            Model risk score
+          </div>
         </div>
         <div className="bg-[var(--paper)] border-[2px] border-black p-3">
-          <div className="font-mono text-[11px] uppercase text-[var(--muted)]">AGENT CONFIDENCE</div>
+          <div className="font-mono text-[11px] uppercase text-[var(--muted)]">FINDINGS</div>
           <div className="font-display text-2xl text-[var(--mint-dark)]">
-            {loading ? "—" : data.agentConfidence}
+            {loading ? "—" : (topCase?.evidenceItems.length ?? 0)}
           </div>
           <div className="font-mono text-[10px] text-[var(--muted)]">
-            {activeCaseId ? "API risk score" : "Demo estimate"}
+            {activeCaseId ? "API findings" : "Backend state"}
           </div>
         </div>
       </div>
@@ -240,25 +246,33 @@ export function CasePackCard({ onAction, onOpenModal }: CasePackCardProps) {
       {/* Evidence & Provenance List */}
       <div className="border-[3px] border-black p-4 bg-[var(--paper)] my-4">
         <div className="font-mono text-xs font-bold uppercase mb-3 flex items-center justify-between">
-          <span>TIGERGRAPH EVIDENCE &amp; AUDIT TRAIL</span>
+          <span>EVIDENCE &amp; AUDIT TRAIL</span>
           <span className="sticker sticker-mint text-[10px] py-0.5 px-1.5">
-            {activeCaseId ? "LIVE DATA" : "VERIFIED PROVENANCE"}
+            {activeCaseId ? "LIVE DATA" : "BACKEND STATE"}
           </span>
         </div>
 
-        <ul className="space-y-2 text-xs font-mono font-medium">
-          {evidenceItems.map((item) => (
-            <li key={item.id} className="flex items-start gap-2 bg-white border border-black p-2">
-              <span className="font-bold" style={{ color: item.color }}>
-                [EVIDENCE #{item.id}]
-              </span>
-              <span>
-                <strong>{item.label}</strong>{" "}
-                {item.detail}
-              </span>
-            </li>
-          ))}
-        </ul>
+        {evidenceItems.length > 0 ? (
+          <ul className="space-y-2 text-xs font-mono font-medium">
+            {evidenceItems.map((item) => (
+              <li key={item.id} className="flex items-start gap-2 bg-white border border-black p-2">
+                <span className="font-bold" style={{ color: item.color }}>
+                  [EVIDENCE #{item.id}]
+                </span>
+                <span>
+                  <strong>{item.label}</strong>{" "}
+                  {item.detail}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="font-mono text-[11px] text-[var(--muted)]">
+            {loading
+              ? "Loading evidence…"
+              : "No findings recorded for this case."}
+          </p>
+        )}
       </div>
 
       {/* Next Best Action System */}

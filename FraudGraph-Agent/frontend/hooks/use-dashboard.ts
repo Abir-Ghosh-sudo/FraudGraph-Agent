@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { casesApi, investigationsApi, actionsApi, healthApi } from "@/lib/api";
+import { casesApi, investigationsApi, healthApi } from "@/lib/api";
 import type { Case } from "@/types/case";
 
 /* -------------------------------------------------------------------------- */
@@ -9,11 +9,21 @@ import type { Case } from "@/types/case";
 /* -------------------------------------------------------------------------- */
 
 export interface DashboardStats {
+  /** Cases in an active pipeline state, counted from the cases API. */
   activeCases: number;
+  /** Cases the backend classified as high risk. */
   highRiskCases: number;
-  pendingActions: number;
-  modelConfidence: number;
+  /** Total cases returned by the backend. */
   totalCases: number;
+  /** Investigations currently tracked by the backend. */
+  activeInvestigations: number;
+  /** Mean of case risk_score (0-100). This is RISK, not accuracy. */
+  meanRiskScore: number | null;
+  /**
+   * False when the benchmark endpoint reports that the ground-truth answer key
+   * is unavailable. The UI must not present an accuracy figure in that case.
+   */
+  accuracyAvailable: boolean;
 }
 
 export interface HealthStatus {
@@ -24,8 +34,17 @@ export interface HealthStatus {
   backendOnline: boolean;
 }
 
+interface ReadinessPayload {
+  status?: string;
+  tigergraph_configured?: boolean;
+  tigergraph_mcp_configured?: boolean;
+  llm_configured?: boolean;
+  embeddings_configured?: boolean;
+  vector_store_configured?: boolean;
+}
+
 /* -------------------------------------------------------------------------- */
-/* useDashboardStats                                                          */
+/* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
 function getErrorMessage(error: unknown): string {
@@ -33,13 +52,23 @@ function getErrorMessage(error: unknown): string {
   return "An unexpected error occurred.";
 }
 
+function asArray<T>(settled: PromiseSettledResult<unknown>): T[] {
+  if (settled.status !== "fulfilled") return [];
+  return Array.isArray(settled.value) ? (settled.value as T[]) : [];
+}
+
+/* -------------------------------------------------------------------------- */
+/* useDashboardStats                                                          */
+/* -------------------------------------------------------------------------- */
+
 export function useDashboardStats(refreshIntervalMs = 15000) {
   const [stats, setStats] = useState<DashboardStats>({
     activeCases: 0,
     highRiskCases: 0,
-    pendingActions: 0,
-    modelConfidence: 91,
     totalCases: 0,
+    activeInvestigations: 0,
+    meanRiskScore: null,
+    accuracyAvailable: false,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,46 +78,53 @@ export function useDashboardStats(refreshIntervalMs = 15000) {
     setError(null);
 
     try {
-      // Fetch cases in parallel
-      const [allCasesRaw, highRiskRaw, actionsRaw] = await Promise.allSettled([
-        casesApi.list<unknown>(),
-        casesApi.list<unknown>({ risk_level: "high" }),
-        actionsApi.list<unknown>({ status: "proposed" }),
-      ]);
+      const [allCasesRaw, highRiskRaw, investigationsRaw, benchmarkRaw] =
+        await Promise.allSettled([
+          casesApi.list<unknown>(),
+          casesApi.list<unknown>({ risk_level: "high" }),
+          investigationsApi.list<unknown>(),
+          import("@/lib/api").then((m) =>
+            m.benchmarkApi.run<{ ground_truth_available?: boolean }>(),
+          ),
+        ]);
 
-      const allCases: Case[] = allCasesRaw.status === "fulfilled"
-        ? Array.isArray(allCasesRaw.value) ? (allCasesRaw.value as Case[]) : []
-        : [];
+      const allCases = asArray<Case>(allCasesRaw);
+      const highRiskCases = asArray<Case>(highRiskRaw);
+      const investigations = asArray<unknown>(investigationsRaw);
 
-      const highRiskCases: Case[] = highRiskRaw.status === "fulfilled"
-        ? Array.isArray(highRiskRaw.value) ? (highRiskRaw.value as Case[]) : []
-        : [];
-
-      const pendingActions = actionsRaw.status === "fulfilled"
-        ? Array.isArray(actionsRaw.value) ? (actionsRaw.value as unknown[]).length : 0
-        : 0;
-
-      // Active cases = open + investigating + awaiting
       const activeCases = allCases.filter((c) =>
-        ["open", "investigating", "awaiting_evidence", "awaiting_approval", "escalated"].includes(c.status)
+        [
+          "open",
+          "investigating",
+          "awaiting_evidence",
+          "awaiting_approval",
+          "escalated",
+        ].includes(c.status),
       ).length;
 
-      // Compute average model confidence from risk_score if available
       const riskScores = allCases
-        .filter((c) => c.risk_score !== null && c.risk_score !== undefined)
-        .map((c) => (c.risk_score as number) * 100);
+        .map((c) => c.risk_score)
+        .filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
 
-      const modelConfidence =
+      const meanRiskScore =
         riskScores.length > 0
-          ? Math.round(riskScores.reduce((a, b) => a + b, 0) / riskScores.length)
-          : 91; // fallback
+          ? Math.round(
+              (riskScores.reduce((a, b) => a + b, 0) / riskScores.length) *
+                100,
+            )
+          : null;
+
+      const groundTruthAvailable =
+        benchmarkRaw.status === "fulfilled" &&
+        benchmarkRaw.value?.ground_truth_available === true;
 
       setStats({
         activeCases,
         highRiskCases: highRiskCases.length,
-        pendingActions,
-        modelConfidence,
         totalCases: allCases.length,
+        activeInvestigations: investigations.length,
+        meanRiskScore,
+        accuracyAvailable: groundTruthAvailable,
       });
     } catch (err) {
       setError(getErrorMessage(err));
@@ -108,6 +144,10 @@ export function useDashboardStats(refreshIntervalMs = 15000) {
 
 /* -------------------------------------------------------------------------- */
 /* useHealthStatus                                                            */
+/*                                                                             */
+/* Configuration flags (tigergraph_configured, llm_configured, ...) are only   */
+/* exposed by /health/readiness. The liveness endpoint /health does not       */
+/* include them, so the readiness probe is the authoritative source.           */
 /* -------------------------------------------------------------------------- */
 
 export function useHealthStatus(refreshIntervalMs = 10000) {
@@ -121,45 +161,23 @@ export function useHealthStatus(refreshIntervalMs = 10000) {
 
   const check = useCallback(async () => {
     try {
-      const res = await healthApi.check<{
-        status: string;
-        tigergraph_configured?: boolean;
-        llm_configured?: boolean;
-        tigergraph_mcp_configured?: boolean;
-        embeddings_configured?: boolean;
-      }>();
+      const res = await healthApi.readiness<ReadinessPayload>();
 
       setHealth({
         agent: res.status === "ok",
         graph: res.tigergraph_configured ?? false,
         model: res.llm_configured ?? false,
         engine: res.status === "ok",
-        backendOnline: res.status === "ok",
+        backendOnline: true,
       });
     } catch {
-      // Check readiness fallback
-      try {
-        const readiness = await fetch("http://localhost:8000/health/readiness").then((r) => r.json()) as {
-          status: string;
-          tigergraph_configured?: boolean;
-          llm_configured?: boolean;
-        };
-        setHealth({
-          agent: readiness.status === "ok",
-          graph: readiness.tigergraph_configured ?? false,
-          model: readiness.llm_configured ?? false,
-          engine: readiness.status === "ok",
-          backendOnline: readiness.status === "ok",
-        });
-      } catch {
-        setHealth({
-          agent: false,
-          graph: false,
-          model: false,
-          engine: false,
-          backendOnline: false,
-        });
-      }
+      setHealth({
+        agent: false,
+        graph: false,
+        model: false,
+        engine: false,
+        backendOnline: false,
+      });
     }
   }, []);
 
@@ -189,7 +207,7 @@ export function useCaseActions(caseId: string | null) {
         ...payload,
       });
     },
-    [caseId]
+    [caseId],
   );
 
   return { executeAction };

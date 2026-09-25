@@ -30,12 +30,12 @@ export function BloopaProtocolSection({
       {/* -------------------------------------------------------------
           Brutalist Tab Switchers: [ How It Works ] & [ The Math ]
           ------------------------------------------------------------- */}
-      <div className="flex items-center gap-4 sm:gap-6 mb-10 select-none">
+      <div className="flex flex-wrap items-center gap-3 sm:gap-6 mb-10 select-none">
         {/* Tab 1: How It Works */}
         <button
           type="button"
           onClick={() => setActiveTab("how-it-works")}
-          className={`px-5 sm:px-8 py-2.5 sm:py-3.5 border-[3.5px] border-black transition-all cursor-pointer font-syne font-black text-2xl sm:text-3xl uppercase tracking-tight ${
+          className={`px-4 sm:px-8 py-2 sm:py-3.5 border-[3.5px] border-black transition-all cursor-pointer font-syne font-black text-lg sm:text-3xl uppercase tracking-tight ${
             activeTab === "how-it-works"
               ? "bg-white shadow-[6px_6px_0_#050505] rotate-[-1.5deg]"
               : "bg-[#f7f4ea] hover:bg-white text-neutral-600 shadow-[3px_3px_0_#050505] rotate-0"
@@ -48,7 +48,7 @@ export function BloopaProtocolSection({
         <button
           type="button"
           onClick={() => setActiveTab("the-math")}
-          className={`px-5 sm:px-8 py-2.5 sm:py-3.5 border-[3.5px] border-black transition-all cursor-pointer font-syne font-black text-2xl sm:text-3xl uppercase tracking-tight ${
+          className={`px-4 sm:px-8 py-2 sm:py-3.5 border-[3.5px] border-black transition-all cursor-pointer font-syne font-black text-lg sm:text-3xl uppercase tracking-tight ${
             activeTab === "the-math"
               ? "bg-white shadow-[6px_6px_0_#050505] rotate-[1.5deg]"
               : "bg-[#f7f4ea] hover:bg-white text-neutral-600 shadow-[3px_3px_0_#050505] rotate-0"
@@ -143,10 +143,15 @@ export function BloopaProtocolSection({
           {/* RIGHT COLUMN: Tier-Based Enforcement Caps Card */}
           <div className="lg:col-span-6">
             <div className="bg-white border-[3.5px] sm:border-[4px] border-black p-6 sm:p-8 shadow-[8px_8px_0_#050505]">
-              {/* Card Title in handwritten / comic style */}
-              <h3 className="font-caveat font-bold text-3xl sm:text-4xl text-black mb-4">
-                Risk-Based Enforcement Tiers (V2)
-              </h3>
+              {/* Card Title + Policy ID */}
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <h3 className="font-caveat font-bold text-2xl sm:text-3xl text-black leading-tight">
+                  Risk-Based Enforcement Tiers (V2)
+                </h3>
+                <span className="font-mono text-[10px] font-black uppercase tracking-[0.14em] text-neutral-600 whitespace-nowrap pt-1.5">
+                  POLICY ID: RE-V908
+                </span>
+              </div>
 
               {/* Solid Black Separator Line */}
               <div className="w-full h-[3px] bg-black mb-6" />
@@ -220,6 +225,15 @@ export function BloopaProtocolSection({
                     Instant SAR Docket
                   </button>
                 </div>
+              </div>
+
+              {/* Consensus Rule */}
+              <div className="mt-6 border-[2.5px] border-dashed border-neutral-400 p-3.5 bg-[#f7f4ea]">
+                <p className="font-mono text-[11px] sm:text-xs font-semibold text-neutral-800 leading-relaxed">
+                  <span className="font-black text-black">Consensus Rule:</span>{" "}
+                  3-of-4 cognitive LangGraph nodes must sign off with TigerGraph
+                  graph votes ≥ 0.8 prior to triggering autonomous enforcement.
+                </p>
               </div>
             </div>
           </div>

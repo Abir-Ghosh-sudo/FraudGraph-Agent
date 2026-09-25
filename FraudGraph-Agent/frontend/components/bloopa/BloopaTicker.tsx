@@ -15,13 +15,14 @@ export function BloopaTicker({
 }: BloopaTickerProps) {
   const isBlack = theme === "black";
 
-  const fallbackItems = isBlack
+  // Exact required phrases from Section 21
+  const baseItems = isBlack
     ? [
         "AUTONOMOUS FRAUD INVESTIGATION",
         "TIGERGRAPH GRAPH CONSENSUS",
-        "ZERO FALSE POSITIVES",
-        "MULTI-AGENT SYNDICATE DETECTION",
-        "78.4ms GRAPH TRAVERSAL LATENCY",
+        "EVIDENCE-FIRST DECISIONS",
+        "MULTI-AGENT INVESTIGATION",
+        "NEXT-BEST ACTION",
       ]
     : [
         "PROTECT YOUR CAPITAL",
@@ -32,7 +33,7 @@ export function BloopaTicker({
       ];
 
   const [items, setItems] = useState<string[]>(
-    defaultText ? [defaultText] : fallbackItems
+    defaultText ? [defaultText] : baseItems
   );
 
   useEffect(() => {
@@ -41,14 +42,14 @@ export function BloopaTicker({
         const raw = await casesApi.list<unknown>();
         const cases = Array.isArray(raw) ? (raw as Case[]) : [];
         if (cases.length > 0 && isBlack) {
-          const dynamic = cases.slice(0, 4).map((c) => {
+          const dynamic = cases.slice(0, 3).map((c) => {
             const risk = c.risk_score ? `${Math.round(c.risk_score * 100)}% RISK` : "FLAGGED";
             return `CASE ${c.case_id.slice(0, 8).toUpperCase()} // ${c.title.toUpperCase()} [${risk}]`;
           });
-          setItems([...dynamic, ...fallbackItems.slice(0, 2)]);
+          setItems([...dynamic, ...baseItems]);
         }
       } catch {
-        // use fallbacks
+        // use default baseItems
       }
     }
     void loadRealTicker();
@@ -62,18 +63,18 @@ export function BloopaTicker({
         isBlack ? "bg-black text-white" : "bg-[#ffe45c] text-black"
       }`}
     >
-      <div className="flex whitespace-nowrap py-2 sm:py-2.5 font-syne font-black text-base sm:text-lg uppercase tracking-wider animate-[marquee_25s_linear_infinite]">
+      <div className="flex whitespace-nowrap py-2 sm:py-2.5 font-syne font-black text-sm sm:text-base uppercase tracking-wider animate-[marquee_28s_linear_infinite] hover:[animation-play-state:paused] motion-reduce:animate-none">
         {displayList.map((item, idx) => (
-          <div key={idx} className="inline-flex items-center gap-4 sm:gap-6 mx-3 sm:mx-4">
+          <div key={idx} className="inline-flex items-center gap-3 sm:gap-5 mx-3 sm:mx-4 shrink-0">
             <span
-              className={`text-lg sm:text-xl font-normal leading-none ${
+              className={`text-base sm:text-lg font-normal leading-none ${
                 isBlack ? "text-white" : "text-black"
               }`}
               aria-hidden="true"
             >
               ✿
             </span>
-            <span className="truncate max-w-[280px] sm:max-w-none">{item}</span>
+            <span className="truncate max-w-[260px] sm:max-w-none">{item}</span>
           </div>
         ))}
       </div>

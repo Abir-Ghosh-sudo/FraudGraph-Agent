@@ -73,16 +73,41 @@ function normalizeGraph(payload: unknown): FraudGraphData {
     ? data.edges
     : [];
 
+  const normalizedNodes: GraphNode[] = rawNodes.map((n: Record<string, unknown>) => ({
+    id: String(n.node_id || n.id || ""),
+    type: String(n.node_type || n.type || "unknown"),
+    label: String(n.label || n.node_id || n.id || ""),
+    properties: (n.properties as Record<string, unknown>) || {},
+    risk_score: typeof n.risk_score === "number" ? n.risk_score : null,
+    risk_level: typeof n.risk_level === "string" ? n.risk_level : null,
+    ...n,
+  }));
+
+  const normalizedEdges: GraphEdge[] = rawEdges.map((e: Record<string, unknown>) => ({
+    id: e.edge_id ? String(e.edge_id) : e.id ? String(e.id) : undefined,
+    source: String(e.source_id || e.source || ""),
+    target: String(e.target_id || e.target || ""),
+    type: String(e.edge_type || e.type || "connected"),
+    label: e.label ? String(e.label) : undefined,
+    properties: (e.properties as Record<string, unknown>) || {},
+    weight: typeof e.weight === "number" ? e.weight : null,
+    ...e,
+  }));
+
   return {
-    nodes: rawNodes as GraphNode[],
-    edges: rawEdges as GraphEdge[],
+    nodes: normalizedNodes,
+    edges: normalizedEdges,
     metadata:
-      data.metadata &&
-      typeof data.metadata === "object"
+      data.metadata && typeof data.metadata === "object"
         ? (data.metadata as Record<string, unknown>)
-        : undefined,
+        : {
+            node_count: data.node_count ?? normalizedNodes.length,
+            edge_count: data.edge_count ?? normalizedEdges.length,
+            depth: data.depth,
+          },
   };
 }
+
 
 export function useGraph(
   options: UseGraphOptions = {},
