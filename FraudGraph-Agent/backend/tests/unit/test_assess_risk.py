@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 from backend.agent.nodes.assess_risk import AssessRiskNode
 from backend.agent.state import create_initial_state
 from backend.app.config import Settings
@@ -17,7 +20,12 @@ def test_assess_risk_fallback_when_no_ml():
     result = node(state)
     assessment = result["assessment"]
     assert assessment.risk_score is not None
-    assert assessment.risk_level in [RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH, RiskLevel.CRITICAL]
+    assert assessment.risk_level in [
+        RiskLevel.LOW,
+        RiskLevel.MEDIUM,
+        RiskLevel.HIGH,
+        RiskLevel.CRITICAL,
+    ]
     assert assessment.ml_used is False
     assert assessment.ml_fraud_probability is None
     assert assessment.bank_risk_score == 0.45
@@ -45,6 +53,10 @@ def test_assess_risk_with_ml_probability_in_trigger():
     assert assessment.risk_level in [RiskLevel.MEDIUM, RiskLevel.HIGH, RiskLevel.CRITICAL]
 
 
+@pytest.mark.skipif(
+    not (Path("data/raw/transactions.csv").is_file() and Path("data/raw/identity.csv").is_file()),
+    reason="requires the optional raw transaction and identity datasets",
+)
 def test_assess_risk_with_real_transaction():
     settings = Settings()
     node = AssessRiskNode(settings)

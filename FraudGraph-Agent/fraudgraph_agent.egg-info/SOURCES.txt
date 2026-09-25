@@ -112,6 +112,12 @@ backend/memory/outcomes.py
 backend/memory/retrieval.py
 backend/memory/similarity.py
 backend/memory/writer.py
+backend/ml/__init__.py
+backend/ml/benchmark.py
+backend/ml/feature_builder.py
+backend/ml/fraud_model.py
+backend/ml/inference.py
+backend/ml/transaction_loader.py
 backend/nba/candidates.py
 backend/nba/constraints.py
 backend/nba/engine.py
@@ -128,7 +134,11 @@ backend/risk/uncertainty.py
 backend/sar/formatter.py
 backend/sar/generator.py
 backend/sar/policy_check.py
+backend/tests/unit/test_action_safety.py
+backend/tests/unit/test_assess_risk.py
+backend/tests/unit/test_auth.py
 backend/tests/unit/test_config.py
+backend/tests/unit/test_execute_action_safety.py
 backend/tests/unit/test_schemas.py
 backend/tests/unit/test_state.py
 backend/tigergraph/client.py

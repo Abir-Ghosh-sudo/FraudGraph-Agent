@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from uuid import uuid4
-
-from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.app.config import Settings
 from backend.app.dependencies import (
@@ -20,22 +17,12 @@ from backend.app.schemas.action import (
     NextBestAction,
 )
 from backend.app.services.investigation import InvestigationService
+from fastapi import APIRouter, Depends, HTTPException, status
 
 router = APIRouter(
     prefix="/actions",
     tags=["actions"],
 )
-
-_ACTIONS_REGISTRY: dict[str, NextBestAction] = {}
-_APPROVALS_REGISTRY: dict[str, ApprovalRequest] = {}
-
-
-def register_action(action: NextBestAction) -> None:
-    _ACTIONS_REGISTRY[action.action_id] = action
-
-
-def register_approval(approval: ApprovalRequest) -> None:
-    _APPROVALS_REGISTRY[approval.approval_id] = approval
 
 
 @router.get(
@@ -60,11 +47,6 @@ async def get_action_plan(
             detail=f"No action plan generated for investigation '{investigation_id}'.",
         )
 
-    if plan.selected_action:
-        register_action(plan.selected_action)
-    if state.get("approval"):
-        register_approval(state["approval"])
-
     return plan
 
 
@@ -76,17 +58,14 @@ async def get_action(
     action_id: str,
     service: InvestigationService = Depends(get_investigation_service),
 ) -> NextBestAction:
-    if action_id in _ACTIONS_REGISTRY:
-        return _ACTIONS_REGISTRY[action_id]
+    for investigation in service.list():
+        state = service.get_state(investigation.investigation_id)
+        if state is None:
+            continue
 
-    # Search in active investigations
-    for inv in service.list():
-        state = service.get_state(inv.investigation_id)
-        if state and state.get("selected_action"):
-            act = state["selected_action"]
-            if act.action_id == action_id:
-                register_action(act)
-                return act
+        action = state.get("selected_action")
+        if action is not None and action.action_id == action_id:
+            return action
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -102,16 +81,14 @@ async def get_approval(
     approval_id: str,
     service: InvestigationService = Depends(get_investigation_service),
 ) -> ApprovalRequest:
-    if approval_id in _APPROVALS_REGISTRY:
-        return _APPROVALS_REGISTRY[approval_id]
+    for investigation in service.list():
+        state = service.get_state(investigation.investigation_id)
+        if state is None:
+            continue
 
-    for inv in service.list():
-        state = service.get_state(inv.investigation_id)
-        if state and state.get("approval"):
-            appr = state["approval"]
-            if appr.approval_id == approval_id:
-                register_approval(appr)
-                return appr
+        approval = state.get("approval")
+        if approval is not None and approval.approval_id == approval_id:
+            return approval
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -128,44 +105,82 @@ async def execute_action(
     settings: Settings = Depends(get_app_settings),
     service: InvestigationService = Depends(get_investigation_service),
 ) -> ActionExecutionResult:
-    now = datetime.now(UTC)
+    """Fail closed until a real registered provider handler is configured.
 
-    if not settings.allow_action_execution:
-        return ActionExecutionResult(
-            action_id=payload.action_id,
-            status=ActionStatus.FAILED,
-            success=False,
-            message="Action execution is disabled in system settings (ALLOW_ACTION_EXECUTION=False).",
-            executed_at=now,
+    Client-supplied approver identities are deliberately not accepted. An
+    approval ID is only accepted when the matching server-side investigation
+    state contains an approved request bound to this exact action.
+    """
+    now = datetime.now(UTC)
+    selected_action: NextBestAction | None = None
+    matching_approval: ApprovalRequest | None = None
+
+    for investigation in service.list():
+        state = service.get_state(investigation.investigation_id)
+        if state is None:
+            continue
+
+        action = state.get("selected_action")
+        if action is None or action.action_id != payload.action_id:
+            continue
+
+        selected_action = action
+        approval = state.get("approval")
+        if (
+            approval is not None
+            and payload.approval_id is not None
+            and approval.approval_id == payload.approval_id
+        ):
+            matching_approval = approval
+        break
+
+    if selected_action is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Action '{payload.action_id}' is not registered for an investigation.",
         )
 
-    # If action requires approval, verify approval status
-    action = None
-    if payload.action_id in _ACTIONS_REGISTRY:
-        action = _ACTIONS_REGISTRY[payload.action_id]
-    else:
-        for inv in service.list():
-            state = service.get_state(inv.investigation_id)
-            if state and state.get("selected_action") and state["selected_action"].action_id == payload.action_id:
-                action = state["selected_action"]
-                break
-
-    if action and action.requires_approval:
-        if not payload.approved_by and not payload.approval_id:
+    if selected_action.requires_approval:
+        approved = (
+            matching_approval is not None
+            and matching_approval.status == ApprovalStatus.APPROVED
+            and matching_approval.action_id == selected_action.action_id
+            and selected_action.approval_status == ApprovalStatus.APPROVED
+        )
+        if not approved:
             return ActionExecutionResult(
                 action_id=payload.action_id,
                 status=ActionStatus.PENDING_APPROVAL,
                 success=False,
-                message="Action requires human approval before execution.",
+                message=(
+                    "No matching server-side approved request was found. No action was performed."
+                ),
                 executed_at=now,
             )
 
+    if not settings.allow_action_execution:
+        return ActionExecutionResult(
+            action_id=payload.action_id,
+            status=ActionStatus.CANCELLED,
+            success=False,
+            message="Action execution is disabled. No action was performed.",
+            executed_at=now,
+        )
+
+    # There is currently no provider handler wired into this API. Returning
+    # success here would create a false operational/audit record.
     return ActionExecutionResult(
         action_id=payload.action_id,
-        status=ActionStatus.COMPLETED,
-        success=True,
-        message=f"Action '{payload.action_id}' executed successfully.",
-        external_reference=f"ext_{uuid4().hex[:10]}",
-        result=payload.parameters,
+        status=ActionStatus.FAILED,
+        success=False,
+        message=("No real action handler is configured. The action was not performed."),
         executed_at=now,
     )
+
+
+__all__ = [
+    "execute_action",
+    "get_action",
+    "get_action_plan",
+    "get_approval",
+]

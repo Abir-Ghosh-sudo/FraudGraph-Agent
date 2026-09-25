@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
-
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.v1.router import api_router
 from backend.app.config import Settings, get_settings
 from backend.app.dependencies import initialize_runtime
+from backend.app.middleware.auth import (
+    require_api_auth,
+    validate_auth_configuration,
+)
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 
 @asynccontextmanager
@@ -24,6 +27,7 @@ def create_app(
     settings: Settings | None = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
+    validate_auth_configuration(resolved_settings)
 
     app = FastAPI(
         title=resolved_settings.app_name,
@@ -49,6 +53,7 @@ def create_app(
     app.include_router(
         api_router,
         prefix=resolved_settings.api_prefix,
+        dependencies=[Depends(require_api_auth)],
     )
 
     @app.get(

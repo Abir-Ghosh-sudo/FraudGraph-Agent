@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from backend.ml.transaction_loader import TransactionRecordLoader
@@ -475,12 +475,13 @@ def investigate(state: dict[str, Any]) -> dict[str, Any]:
 
 def run(state: dict[str, Any]) -> dict[str, Any]:
     return investigate(state)
+
+
 class InvestigationNode:
-    def __init__(self, settings=None):
+    """LangGraph adapter for the existing investigation function."""
+
+    def __init__(self, settings: Any) -> None:
         self.settings = settings
 
-    def __call__(self, state):
-        return investigate(state)
-
-    def run(self, state):
+    def run(self, state: dict[str, Any]) -> dict[str, Any]:
         return investigate(state)

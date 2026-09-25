@@ -1,0 +1,53 @@
+"use client";
+
+import React, { useState } from "react";
+import Link from "next/link";
+import { InvestigationBoard } from "@/components/brutalist/MetricCard";
+import { NBARecommendation, ApprovalDocument } from "@/components/brutalist/NBAAndApproval";
+import { StatusStrip, BottomStatus } from "@/components/brutalist/StatusBars";
+import { Navbar } from "@/components/brutalist/Navbar";
+
+export default function ActionsPage() {
+  const [toast, setToast] = useState<string | null>(null);
+  const showToast = (msg: string) => setToast(msg);
+
+  return (
+    <div className="min-h-screen paper-texture flex flex-col selection:bg-[var(--yellow)] selection:text-black">
+      <StatusStrip />
+      <Navbar activeTab="actions" onShowToast={showToast} />
+      <main className="container mx-auto px-4 sm:px-6 py-6 flex-1 space-y-8">
+        <Link href="/" className="btn-ghost text-xs py-1.5 px-3">
+          ← BACK TO FRAUDGRAPH CONSOLE
+        </Link>
+        <InvestigationBoard heading="NEXT BEST ACTION QUEUE" sticker="ACTIONS">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <NBARecommendation
+              action="STEP-UP AUTH"
+              why={[
+                "New device detected",
+                "High-risk transaction",
+                "Similar historical fraud",
+                "Customer identity not verified",
+              ]}
+              policy="R1 — Verify before block"
+              confidence={87}
+              onApprove={() => showToast("Requested step-up authentication.")}
+              onReject={() => showToast("Escalated to senior analyst.")}
+              onMoreEvidence={() => showToast("Opened evidence wall.")}
+            />
+            <ApprovalDocument
+              action="BLOCK CARD"
+              risk="CRITICAL"
+              exposure="$2,840"
+              policy="L2 APPROVAL REQUIRED"
+              onApprove={() => showToast("Approved action.")}
+              onReject={() => showToast("Rejected action.")}
+              onMoreEvidence={() => showToast("Requested more evidence.")}
+            />
+          </div>
+        </InvestigationBoard>
+      </main>
+      <BottomStatus />
+    </div>
+  );
+}

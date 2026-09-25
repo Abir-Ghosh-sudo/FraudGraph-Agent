@@ -2,30 +2,29 @@
 
 import React from "react";
 import Link from "next/link";
-import { AgentCognitionStream } from "@/components/brutalist/AgentCognitionStream";
+import { FraudGraphCanvas } from "@/components/brutalist/FraudGraphCanvas";
 import { InvestigationBoard } from "@/components/brutalist/MetricCard";
-import { DefaultTimeline } from "@/components/brutalist/Timeline";
 import { StatusStrip, BottomStatus } from "@/components/brutalist/StatusBars";
 import { Navbar } from "@/components/brutalist/Navbar";
 
-export default function InvestigationsPage() {
+const showToast = (msg: string) => {
+  if (typeof window !== "undefined") {
+    // eslint-disable-next-line no-console
+    console.log(msg);
+  }
+};
+
+export default function GraphPage() {
   return (
     <div className="min-h-screen paper-texture flex flex-col selection:bg-[var(--yellow)] selection:text-black">
       <StatusStrip />
-      <Navbar activeTab="investigations" onShowToast={() => {}} />
+      <Navbar activeTab="graph" onShowToast={showToast} />
       <main className="container mx-auto px-4 sm:px-6 py-6 flex-1 space-y-8">
         <Link href="/" className="btn-ghost text-xs py-1.5 px-3">
           ← BACK TO FRAUDGRAPH CONSOLE
         </Link>
-        <InvestigationBoard heading="ACTIVE INVESTIGATIONS" sticker="INVESTIGATIONS">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <AgentCognitionStream onAction={() => {}} />
-            </div>
-            <div>
-              <DefaultTimeline />
-            </div>
-          </div>
+        <InvestigationBoard heading="FRAUD RELATIONSHIP GRAPH" sticker="GRAPH">
+          <FraudGraphCanvas onAction={showToast} />
         </InvestigationBoard>
       </main>
       <BottomStatus />

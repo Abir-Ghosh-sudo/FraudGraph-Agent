@@ -4,14 +4,13 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
-
 from backend.app.schemas.action import ActionPlan, NextBestAction
 from backend.app.schemas.evidence import Evidence
 from backend.app.schemas.investigation import (
     InvestigationAssessment,
     InvestigationStatus,
 )
+from pydantic import BaseModel, ConfigDict, Field
 
 
 def utc_now() -> datetime:
@@ -47,6 +46,7 @@ class AgentEventType(StrEnum):
     ACTION_RECOMMENDED = "action_recommended"
     APPROVAL_REQUESTED = "approval_requested"
     ACTION_EXECUTED = "action_executed"
+    ACTION_FAILED = "action_failed"
     CASE_UPDATED = "case_updated"
     MEMORY_UPDATED = "memory_updated"
     INVESTIGATION_COMPLETED = "investigation_completed"

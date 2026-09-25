@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -189,8 +188,6 @@ class ActionExecutionRequest(BaseModel):
 
     action_id: str
 
-    approved_by: str | None = None
-
     approval_id: str | None = None
 
     parameters: dict[str, Any] = Field(
@@ -232,4 +229,3 @@ class ActionPlan(BaseModel):
     explanation: str | None = None
 
     requires_human_approval: bool = True
-
