@@ -221,6 +221,17 @@ class Settings(BaseSettings):
     fraud_model_threshold: float = 0.50
     fraud_model_enabled: bool = True
 
+    # ------------------------------------------------------------------
+    # Startup dataset ingest
+    #
+    # The case and evidence services are in-memory, so the API starts empty on
+    # every boot. When enabled, the raw IEEE-CIS dataset is streamed through
+    # the trained model on startup to populate real records.
+    # ------------------------------------------------------------------
+
+    auto_ingest: bool = True
+    ingest_case_limit: int = 10
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()

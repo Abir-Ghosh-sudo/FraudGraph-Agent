@@ -340,10 +340,19 @@ def test_assess_risk_with_real_transaction() -> None:
 
     assert assessment.ml_used is True
     assert assessment.ml_fraud_probability is not None
-    assert assessment.ml_fraud_probability > 0.90
-    assert assessment.bank_risk_score == pytest.approx(0.61)
-    assert assessment.ml_model_version == "v1.0.0"
 
-    # Score must stay a valid probability and agree with its own level.
-    assert 0.0 <= assessment.risk_score <= 1.0
+    # The model is calibrated against the full class distribution, so its
+    # output is a genuine probability rather than a near-constant 0.999. An
+    # earlier revision of this test asserted > 0.90, which only held while the
+    # model was degenerate.
+    assert 0.0 <= assessment.ml_fraud_probability <= 1.0
+    assert assessment.bank_risk_score == pytest.approx(0.61)
+    assert assessment.ml_model_version
+
+    # Weighted blend of the ML probability and the bank risk score, using the
+    # same weights as the production scorer.
+    expected = (
+        assessment.ml_fraud_probability * 0.40 + 0.61 * 0.20
+    ) / 0.60
+    assert assessment.risk_score == pytest.approx(expected)
     assert assessment.risk_level is _risk_level(assessment.risk_score)

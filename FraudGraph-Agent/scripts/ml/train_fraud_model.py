@@ -230,10 +230,19 @@ def load_labeled_transactions(
     transactions_path: Path,
     labels: dict[str, int],
     chunksize: int = 50_000,
+    negative_target: int = 0,
 ) -> pd.DataFrame:
     """
     Read transactions in chunks and retain only transactions with explicit
     closed-case labels.
+
+    When ``negative_target`` is greater than zero, unreferenced transactions are
+    also sampled and labelled 0. Closed-case history only contains transactions
+    that were investigated, so it is overwhelmingly positive (roughly 96% in
+    practice). Training on those labels alone teaches the model that every
+    transaction is fraud, which produces a degenerate "always fraud" predictor.
+    Sampling unreferenced transactions as negatives restores a usable decision
+    boundary. This assumption is recorded in the saved model metadata.
     """
     if not labels:
         raise RuntimeError(
@@ -268,6 +277,7 @@ def load_labeled_transactions(
         )
 
     chunks: list[pd.DataFrame] = []
+    negatives_taken = 0
 
     for chunk in pd.read_csv(
         transactions_path,
@@ -281,15 +291,34 @@ def load_labeled_transactions(
 
         mask = normalized_ids.isin(labels.keys())
 
-        if not mask.any():
-            continue
+        if mask.any():
+            selected = chunk.loc[mask].copy()
+            selected[TRANSACTION_ID] = normalized_ids.loc[mask]
+            selected["target"] = selected[TRANSACTION_ID].map(labels)
+            chunks.append(selected)
 
-        selected = chunk.loc[mask].copy()
+        # Sample unreferenced transactions as negatives.
+        if negative_target > 0 and negatives_taken < negative_target:
+            remaining = negative_target - negatives_taken
+            # Aim for the full target across the whole file, scaled by how
+            # much of the file this chunk represents.
+            want = int(remaining * (chunksize / 1_000_000)) + 1
 
-        selected[TRANSACTION_ID] = normalized_ids.loc[mask]
-        selected["target"] = selected[TRANSACTION_ID].map(labels)
+            neg_mask = ~normalized_ids.isin(labels.keys())
+            candidates = chunk.loc[neg_mask].copy()
 
-        chunks.append(selected)
+            if not candidates.empty:
+                sample_size = min(want, remaining, len(candidates))
+                sampled = candidates.sample(
+                    n=sample_size,
+                    random_state=42,
+                )
+                sampled[TRANSACTION_ID] = normalized_ids.loc[
+                    sampled.index
+                ]
+                sampled["target"] = 0
+                negatives_taken += len(sampled)
+                chunks.append(sampled)
 
     if not chunks:
         raise RuntimeError(
@@ -304,6 +333,12 @@ def load_labeled_transactions(
     dataframe = dataframe.drop_duplicates(
         subset=[TRANSACTION_ID],
         keep="first",
+    )
+
+    print(
+        f"Assembled {int((dataframe['target'] == 1).sum()):,} positive and "
+        f"{int((dataframe['target'] == 0).sum()):,} negative training rows "
+        f"({int((dataframe['target'] == 1).mean()) * 100:.2f}% positive)."
     )
 
     return dataframe
@@ -615,6 +650,9 @@ def train_model(
         colsample_bytree=0.85,
         reg_alpha=0.5,
         reg_lambda=1.0,
+        # Closed-case labels are heavily skewed positive; without balancing the
+        # model collapses into predicting fraud for every transaction.
+        class_weight="balanced",
         random_state=42,
         n_jobs=-1,
     )
@@ -724,7 +762,7 @@ def save_artifacts(
         "target_definition": {
             "confirmed_fraud": 1,
             "cleared": 0,
-            "unreferenced_transactions": "excluded",
+            "unreferenced_transactions": "sampled_as_negative",
         },
         "benchmark_excluded": True,
         "random_state": 42,
@@ -768,6 +806,18 @@ def main() -> None:
         "--chunksize",
         type=int,
         default=50_000,
+    )
+
+    parser.add_argument(
+        "--negative-target",
+        type=int,
+        default=40_000,
+        help=(
+            "Number of unreferenced transactions to sample as negatives. "
+            "Closed-case history is ~96%% fraud, so this is required for a "
+            "usable decision boundary. Set to 0 to train on closed-case "
+            "labels only (produces an always-fraud model)."
+        ),
     )
 
     args = parser.parse_args()
@@ -843,6 +893,7 @@ def main() -> None:
         transactions_path=transactions_path,
         labels=labels,
         chunksize=args.chunksize,
+        negative_target=args.negative_target,
     )
 
     print(

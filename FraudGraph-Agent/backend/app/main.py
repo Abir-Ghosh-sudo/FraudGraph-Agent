@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+import os
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from backend.app.api.v1.router import api_router
 from backend.app.config import Settings, get_settings
 from backend.app.dependencies import initialize_runtime
+from backend.app.logging import get_logger
 from backend.app.middleware.auth import (
     require_api_auth,
     validate_auth_configuration,
 )
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -20,7 +25,53 @@ async def lifespan(
 ) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     initialize_runtime(settings)
+    _maybe_start_ingest(settings)
     yield
+
+
+def _maybe_start_ingest(settings: Settings) -> None:
+    """Load the real dataset into the case/evidence stores on boot.
+
+    The case and evidence services are in-memory, so every restart would
+    otherwise leave the API empty. This runs in a background thread because it
+    streams a large CSV and must not delay server startup.
+    """
+    if not settings.auto_ingest:
+        return
+
+    if os.environ.get("FRAUDGRAPH_DISABLE_INGEST") == "1":
+        return
+
+    root = settings.raw_data_dir
+    transactions = root / "transactions.csv"
+    identity = root / "identity.csv"
+    model = settings.fraud_model_path
+    metadata = settings.fraud_model_metadata_path
+
+    if not transactions.exists() or not model.exists():
+        return
+
+    def _run() -> None:
+        try:
+            from backend.app.dependencies import get_application_context
+            from backend.app.ingest import ingest_real_dataset
+
+            ctx = get_application_context()
+            results = ingest_real_dataset(
+                case_service=ctx.case_service,
+                evidence_service=ctx.evidence_service,
+                transactions_csv=transactions,
+                identity_csv=identity,
+                model_path=model,
+                metadata_path=metadata,
+                limit=settings.ingest_case_limit,
+            )
+            logger.info("startup ingest finished", cases=len(results))
+        except Exception as exc:  # noqa: BLE001
+            # Ingest failure must never prevent the API from serving.
+            logger.warning("startup ingest failed", error=str(exc))
+
+    threading.Thread(target=_run, name="ingest", daemon=True).start()
 
 
 def create_app(
