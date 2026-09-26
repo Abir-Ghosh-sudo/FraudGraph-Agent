@@ -4,14 +4,16 @@ import React, { useEffect, useState } from "react";
 import { casesApi } from "@/lib/api";
 import type { Case } from "@/types/case";
 
+// Neutral capability statements. These assert nothing about live findings:
+// the earlier list invented a mule ring id, a prevented-loss total, a precision
+// figure and a latency number, none of which came from the backend.
 const FALLBACK_ITEMS = [
-  "CRITICAL ALERT // MULE RING #MR-9082 DETECTED",
-  "14 ACCOUNTS FLAGGED ACROSS 3 JURISDICTIONS",
-  "$4,829,120 PREVENTED CAPITAL DRAIN",
-  "TIGERGRAPH HYBRID RETRIEVER: 99.4% PRECISION",
-  "AUTONOMOUS AGENT CONSENSUS: 78.4ms LATENCY",
-  "ZERO NOISE // 100% AUDITABLE PROVENANCE",
-  "SYNDICATE PATTERN: CYCLIC SMURFING DETECTED",
+  "AUTONOMOUS FRAUD INVESTIGATION",
+  "TIGERGRAPH GRAPH CONSENSUS",
+  "EVIDENCE-FIRST DECISIONS",
+  "REAL-TIME TRANSACTION MONITORING",
+  "MULTI-AGENT SYNDICATE DETECTION",
+  "NEXT-BEST ACTION POLICY GATES",
 ];
 
 export function TickerMarquee() {

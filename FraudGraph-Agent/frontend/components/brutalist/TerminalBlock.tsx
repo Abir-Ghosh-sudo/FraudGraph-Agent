@@ -86,35 +86,18 @@ function buildScriptFromCase(c: Case): TerminalLine[] {
   return lines;
 }
 
-// Fallback demo script when no cases available
-const DEMO_SCRIPT: TerminalLine[] = [
-  { prefix: ">", text: "INVESTIGATION STARTED", tint: "mint" },
-  { prefix: ">", text: "CASE: HHG-001", tint: "white" },
-  { prefix: ">", text: "TRIGGER: FRAUD_SIGNAL", tint: "white" },
-  { prefix: ">", text: "", tint: "white" },
-  { prefix: ">", text: "loading transaction...", tint: "yellow" },
-  { prefix: "✓", text: "transaction found", tint: "mint" },
-  { prefix: ">", text: "", tint: "white" },
-  { prefix: ">", text: "querying graph...", tint: "yellow" },
-  { prefix: "✓", text: "12 connected entities", tint: "mint" },
-  { prefix: ">", text: "", tint: "white" },
-  { prefix: ">", text: "searching historical cases...", tint: "yellow" },
-  { prefix: "✓", text: "3 similar cases", tint: "mint" },
-  { prefix: ">", text: "", tint: "white" },
-  { prefix: ">", text: "assessing risk...", tint: "yellow" },
-  { prefix: ">", text: "MODEL: 0.91", tint: "pink" },
-  { prefix: ">", text: "GRAPH: HIGH", tint: "pink" },
-  { prefix: ">", text: "", tint: "white" },
-  { prefix: ">", text: "evaluating next-best-action...", tint: "yellow" },
-  { prefix: "✓", text: "STEP_UP_AUTH", tint: "mint" },
-  { prefix: ">", text: "", tint: "white" },
-  { prefix: ">", text: "awaiting approval...", tint: "yellow" },
+// Shown when the backend has no active case. Deliberately states the absence
+// rather than replaying an invented investigation run.
+const IDLE_SCRIPT: TerminalLine[] = [
+  { prefix: ">", text: "awaiting case feed...", tint: "yellow" },
+  { prefix: "!", text: "no active case returned by the API", tint: "pink" },
+  { prefix: ">", text: "start an investigation to populate this console", tint: "white" },
 ];
 
 export function TerminalBlock() {
   const [lines, setLines] = useState<TerminalLine[]>([]);
-  const [script, setScript] = useState<TerminalLine[]>(DEMO_SCRIPT);
-  const [caseLabel, setCaseLabel] = useState("HHG-001");
+  const [script, setScript] = useState<TerminalLine[]>(IDLE_SCRIPT);
+  const [caseLabel, setCaseLabel] = useState("IDLE");
   const endRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef(false);
 
@@ -133,9 +116,13 @@ export function TerminalBlock() {
           const c = active[0];
           setScript(buildScriptFromCase(c));
           setCaseLabel(c.case_id.slice(0, 12).toUpperCase());
+        } else {
+          setScript(IDLE_SCRIPT);
+          setCaseLabel("IDLE");
         }
       } catch {
-        // Keep demo script
+        setScript(IDLE_SCRIPT);
+        setCaseLabel("UNAVAILABLE");
       }
     }
     void loadCase();

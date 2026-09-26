@@ -139,10 +139,13 @@ async def execute_graph_query(
 async def get_investigation_subgraph(
     node_id: str,
     query_name: str = Query(
+        None,
         min_length=1,
         description=(
             "Registered TigerGraph query used to collect "
-            "the investigation relationships."
+            "the investigation relationships. Optional: it is only "
+            "meaningful when TigerGraph is the active source. When omitted, "
+            "the graph is traversed from the relational ledger."
         ),
     ),
     depth: int = Query(
@@ -157,7 +160,7 @@ async def get_investigation_subgraph(
     ),
     service: GraphService = Depends(get_graph_service),
 ) -> InvestigationSubgraph:
-    if not service.is_configured():
+    if not service.is_configured() and service._relational_or_none() is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="TigerGraph is not configured.",

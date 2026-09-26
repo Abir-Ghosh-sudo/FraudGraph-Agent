@@ -83,6 +83,9 @@ def _maybe_build_relational_graph(settings: Settings) -> None:
     from real transaction/identity rows and real model output; it is never
     fabricated. Built in a thread because it streams the ledger.
     """
+    if not settings.build_relational_graph:
+        return
+
     transactions = settings.raw_data_dir / "transactions.csv"
     identity = settings.raw_data_dir / "identity.csv"
 
@@ -91,7 +94,7 @@ def _maybe_build_relational_graph(settings: Settings) -> None:
 
     def _run() -> None:
         try:
-            from backend.app.dependencies import get_graph_service
+            from backend.app.services.graph import set_relational_graph
             from backend.app.services.relational_graph import RelationalFraudGraph
 
             graph = RelationalFraudGraph.from_dataset(
@@ -102,10 +105,8 @@ def _maybe_build_relational_graph(settings: Settings) -> None:
                 max_rows=settings.graph_build_row_limit,
                 score_transactions=settings.graph_score_row_limit,
             )
-            service = get_graph_service()
-            if service is not None:
-                service.relational = graph
-                logger.info("relational graph attached to graph service")
+            set_relational_graph(graph)
+            logger.info("relational graph attached to graph service")
         except Exception as exc:  # noqa: BLE001
             logger.warning("relational graph build failed", error=str(exc))
 

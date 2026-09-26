@@ -164,7 +164,7 @@ interface FraudGraphCanvasProps {
 
 export function FraudGraphCanvas({
   onAction = () => {},
-  initialTarget = "C12382",
+  initialTarget = "3000003",
   initialTargetType = "customer",
 }: FraudGraphCanvasProps) {
   // Target Search Controls
@@ -282,34 +282,90 @@ export function FraudGraphCanvas({
         }
 
         // Normalize response.
-        // Every field is taken verbatim from the backend. When a field is
-        // absent it is left undefined rather than replaced with an invented
-        // value (a fabricated "$142,000" volume or a made-up risk of 75 would
-        // read as real intelligence on the canvas).
-        const normalizedNodes: GraphNode[] = rawNodes.map((n: Record<string, unknown>, idx: number) => ({
-          id: String(n.node_id || n.id || `V-${idx}`),
-          label: String(n.label || n.node_id || n.id || `Vertex ${idx}`),
-          type: String(n.node_type || n.type || targetType),
-          riskScore: typeof n.risk_score === "number" ? n.risk_score : undefined,
-          volume: typeof n.volume === "string" ? n.volume : undefined,
-          degree: typeof n.degree === "number" ? n.degree : undefined,
-          centrality:
-            typeof n.centrality === "number" ? n.centrality : undefined,
-          flaggedReason:
-            typeof n.flagged_reason === "string" ? n.flagged_reason : undefined,
-          properties: (n.properties as Record<string, unknown>) || {},
-        }));
+        // The API contract is
+        //   node: { node_id, node_type, label, properties: {...} }
+        //   edge: { source_id, target_id, edge_type, properties: {...} }
+        // so the descriptive fields arrive nested under `properties`. Reading
+        // them only from the top level meant risk, amount and degree were
+        // always undefined and the canvas rendered unscored nodes.
+        // Values are taken verbatim; a field that is genuinely absent stays
+        // undefined rather than being replaced with an invented one.
+        const normalizedNodes: GraphNode[] = rawNodes.map(
+          (n: Record<string, unknown>, idx: number) => {
+            const props = (n.properties as Record<string, unknown>) || {};
+            const pick = (key: string): unknown =>
+              n[key] !== undefined ? n[key] : props[key];
 
-        const normalizedEdges: GraphEdge[] = rawEdges.map((e: Record<string, unknown>) => ({
-          id: String(e.edge_id || e.id || ""),
-          from: String(e.source_id || e.source || e.from || ""),
-          to: String(e.target_id || e.target || e.to || ""),
-          amount: typeof e.amount === "string" ? e.amount : undefined,
-          hops: typeof e.hops === "number" ? e.hops : undefined,
-          type: String(e.edge_type || e.type || "transacted"),
-          isCycle: Boolean(e.is_cycle || e.isCycle),
-          properties: (e.properties as Record<string, unknown>) || {},
-        }));
+            // The API documents risk_score as a probability in [0, 1] while the
+            // canvas works in whole percent. Values <= 1 are treated as a
+            // probability and scaled; anything larger is already a percentage.
+            // No value is invented - this is a unit conversion of a real
+            // number, and an unscored vertex stays undefined.
+            const rawRisk = pick("risk_score");
+            const riskScore =
+              typeof rawRisk === "number"
+                ? rawRisk > 1
+                  ? rawRisk
+                  : Math.round(rawRisk * 100)
+                : undefined;
+
+            return {
+              id: String(n.node_id || n.id || `V-${idx}`),
+              label: String(
+                n.label || n.node_id || n.id || `Vertex ${idx}`,
+              ),
+              type: String(n.node_type || n.type || targetType),
+              riskScore,
+              volume:
+                typeof pick("amount") === "number"
+                  ? `$${(pick("amount") as number).toFixed(2)}`
+                  : typeof pick("volume") === "string"
+                    ? (pick("volume") as string)
+                    : undefined,
+              degree:
+                typeof pick("degree") === "number"
+                  ? (pick("degree") as number)
+                  : undefined,
+              centrality:
+                typeof pick("centrality") === "number"
+                  ? (pick("centrality") as number)
+                  : undefined,
+              flaggedReason:
+                typeof pick("flagged_reason") === "string"
+                  ? (pick("flagged_reason") as string)
+                  : undefined,
+              properties: props,
+            };
+          },
+        );
+
+        // Edges carry their descriptive fields under `properties` too.
+        const normalizedEdges: GraphEdge[] = rawEdges.map(
+          (e: Record<string, unknown>) => {
+            const props = (e.properties as Record<string, unknown>) || {};
+            const pick = (key: string): unknown =>
+              e[key] !== undefined ? e[key] : props[key];
+
+            return {
+              id: String(e.edge_id || e.id || ""),
+              from: String(e.source_id || e.source || e.from || ""),
+              to: String(e.target_id || e.target || e.to || ""),
+              amount:
+                typeof pick("amount") === "number"
+                  ? `$${(pick("amount") as number).toFixed(2)}`
+                  : typeof pick("amount") === "string"
+                    ? (pick("amount") as string)
+                    : undefined,
+              hops:
+                typeof pick("hops") === "number"
+                  ? (pick("hops") as number)
+                  : undefined,
+              type: String(e.edge_type || e.type || "related"),
+              isCycle: Boolean(pick("is_cycle") ?? pick("isCycle")),
+              properties: props,
+            };
+          },
+        );
 
         const positioned = layoutNodes(normalizedNodes);
         setNodes(positioned);
@@ -347,10 +403,9 @@ export function FraudGraphCanvas({
   // no risk score or amount is asserted here, because those values are only
   // known once a real graph scan returns them.
   const samplePresets = [
-    { label: "C12382", type: "customer" as const, desc: "Customer id" },
-    { label: "3514030", type: "transaction" as const, desc: "Transaction id" },
-    { label: "C11891-K1", type: "card" as const, desc: "Card id" },
-    { label: "N-8901", type: "account" as const, desc: "Account id" },
+    { label: "3000003", type: "transaction" as const, desc: "Transaction id" },
+    { label: "3000004", type: "transaction" as const, desc: "Transaction id" },
+    { label: "C:22374", type: "card" as const, desc: "Card id" },
   ];
 
   const handleSelectPreset = (preset: (typeof samplePresets)[0]) => {
@@ -453,7 +508,9 @@ export function FraudGraphCanvas({
               GRAPH EXPLORER
             </h2>
             <span className="font-mono text-xs font-bold px-2 py-0.5 bg-[var(--yellow)] border-[2px] border-black">
-              LIVE TIGERGRAPH INVESTIGATION
+              {isGraphConfigured === false
+                ? "LEDGER-DERIVED GRAPH"
+                : "LIVE TIGERGRAPH INVESTIGATION"}
             </span>
             <span
               className={`font-mono text-[10px] font-black uppercase px-2 py-0.5 border-[2px] border-black ${
@@ -685,9 +742,10 @@ export function FraudGraphCanvas({
                 risk scores are rendered only as returned by the graph backend.
               </p>
               {isGraphConfigured === false ? (
-                <p className="font-mono text-[11px] font-bold uppercase text-[var(--red)] max-w-md mt-2">
-                  Graph backend is not configured. Set TIGERGRAPH_* settings on
-                  the API to enable live traversal.
+                <p className="font-mono text-[11px] font-semibold text-neutral-700 max-w-md mt-2 leading-relaxed">
+                  TigerGraph is not configured, so scans are served from the
+                  graph derived from the raw transaction ledger. Configure
+                  TIGERGRAPH_* to traverse the full instance instead.
                 </p>
               ) : null}
             </div>
@@ -840,24 +898,36 @@ export function FraudGraphCanvas({
             </svg>
           </div>
 
-          {/* Canvas Legend */}
+          {/* Canvas Legend
+              Derived from the node types actually present in the loaded
+              subgraph. The previous fixed list (Mule Ring, Synthetic ID,
+              Crypto Mixer, Victim) described the sample dataset and had no
+              relationship to whatever the graph actually returned. */}
           <div className="mt-2 bg-white/95 border-[2px] border-black p-2 flex flex-wrap items-center justify-between text-[11px] font-mono gap-2 z-20">
             <span className="font-bold">LEGEND:</span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-3 h-3 bg-[var(--red)] border border-black inline-block" /> Mule Ring
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-3 h-3 bg-[var(--orange)] border border-black inline-block" /> Synthetic ID
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-3 h-3 bg-[var(--pink)] border border-black inline-block" /> Crypto Mixer
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-3 h-3 bg-[var(--mint)] border border-black inline-block" /> Victim
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-5 border-b-2 border-dashed border-[var(--red)] inline-block" /> Smurfing Loop
-            </span>
+            {nodes.length === 0 ? (
+              <span className="text-neutral-500">
+                no graph loaded — legend reflects the active subgraph
+              </span>
+            ) : (
+              Array.from(new Set(nodes.map((n) => n.type)))
+                .sort()
+                .map((type) => (
+                  <span key={type} className="inline-flex items-center gap-1.5">
+                    <span
+                      className="w-3 h-3 border border-black inline-block"
+                      style={{ background: getNodeColor(type) }}
+                    />
+                    {type}
+                  </span>
+                ))
+            )}
+            {nodes.length > 0 ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-5 border-b-2 border-dashed border-[var(--red)] inline-block" />
+                Cycle flagged
+              </span>
+            ) : null}
           </div>
         </div>
 

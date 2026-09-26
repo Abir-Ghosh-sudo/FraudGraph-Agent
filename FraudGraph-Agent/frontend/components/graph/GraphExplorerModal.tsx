@@ -14,7 +14,7 @@ interface GraphExplorerModalProps {
 export function GraphExplorerModal({
   isOpen,
   onClose,
-  initialTarget = "C12382",
+  initialTarget = "3000003",
   initialTargetType = "customer",
   onShowToast,
 }: GraphExplorerModalProps) {

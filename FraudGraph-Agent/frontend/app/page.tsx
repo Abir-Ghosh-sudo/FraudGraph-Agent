@@ -24,7 +24,7 @@ export default function Home() {
   const [docsModalOpen, setDocsModalOpen] = useState(false);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [graphModalOpen, setGraphModalOpen] = useState(false);
-  const [graphTarget, setGraphTarget] = useState<string>("C12382");
+  const [graphTarget, setGraphTarget] = useState<string>("3000003");
 
   // Simulated Agent Wallet connection
   const [walletConnected, setWalletConnected] = useState(true);

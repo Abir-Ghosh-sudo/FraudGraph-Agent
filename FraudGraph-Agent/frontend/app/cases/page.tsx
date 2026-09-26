@@ -101,59 +101,19 @@ export default function CasesPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {(casesList.length > 0
-              ? casesList
-              : [
-                  {
-                    case_id: "HHG-001",
-                    customer_id: "C12382",
-                    title: "Regional Billing Anomaly (3514030)",
-                    fraud_type: "risk_score",
-                    risk_score: 0.61,
-                    status: "investigating",
-                  },
-                  {
-                    case_id: "HHG-002",
-                    customer_id: "C11891",
-                    title: "High Value Online Charge (3478782)",
-                    fraud_type: "risk_score",
-                    risk_score: 0.79,
-                    status: "open",
-                  },
-                  {
-                    case_id: "HHG-003",
-                    customer_id: "C08623",
-                    title: "Customer Dispute Notification (3530164)",
-                    fraud_type: "customer_report",
-                    risk_score: 0.85,
-                    status: "open",
-                  },
-                  {
-                    case_id: "HHG-004",
-                    customer_id: "C08106",
-                    title: "Unauthorized POS Dispute (3583227)",
-                    fraud_type: "customer_report",
-                    risk_score: 0.74,
-                    status: "open",
-                  },
-                  {
-                    case_id: "HHG-005",
-                    customer_id: "C02923",
-                    title: "Online Velocity Burst (3523199)",
-                    fraud_type: "risk_score",
-                    risk_score: 0.54,
-                    status: "investigating",
-                  },
-                  {
-                    case_id: "HHG-006",
-                    customer_id: "C07297",
-                    title: "High Amount Card Compromise (3476682)",
-                    fraud_type: "customer_report",
-                    risk_score: 0.92,
-                    status: "awaiting_approval",
-                  },
-                ]
-            ).map((c) => (
+          {casesList.length === 0 ? (
+            <div className="col-span-full border-[3px] border-black bg-[var(--mint)] p-6 shadow-[5px_5px_0_#050505]">
+              <p className="font-syne font-black text-lg uppercase text-black mb-1.5">
+                No cases on file
+              </p>
+              <p className="font-mono text-xs font-semibold text-black">
+                The backend returned an empty case list. Start an investigation
+                to populate the case pack.
+              </p>
+            </div>
+          ) : null}
+
+          {casesList.map((c) => (
               <div
                 key={c.case_id}
                 className="bg-[#f7f4ea] border-[2.5px] border-black p-4 shadow-[4px_4px_0_#050505] hover:shadow-[6px_6px_0_#050505] hover:translate-x-[-1px] hover:translate-y-[-1px] transition-all flex flex-col justify-between"

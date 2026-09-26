@@ -46,7 +46,7 @@ export default function BenchmarkPage() {
   const [running, setRunning] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [graphModalOpen, setGraphModalOpen] = useState(false);
-  const [selectedTarget, setSelectedTarget] = useState("C12382");
+  const [selectedTarget, setSelectedTarget] = useState("3000003");
 
   async function loadReport() {
     setLoading(true);
@@ -111,7 +111,7 @@ export default function BenchmarkPage() {
             <button
               type="button"
               onClick={() => {
-                setSelectedTarget("C12382");
+                setSelectedTarget("3000003");
                 setGraphModalOpen(true);
               }}
               className="bg-[#ffe45c] hover:bg-[#fed932] border-[2.5px] border-black px-3.5 py-1.5 font-mono font-bold text-xs uppercase shadow-[2px_2px_0_#050505] cursor-pointer"

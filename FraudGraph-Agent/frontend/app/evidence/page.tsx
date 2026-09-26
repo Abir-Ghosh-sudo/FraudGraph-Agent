@@ -14,7 +14,7 @@ export default function EvidencePage() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [graphModalOpen, setGraphModalOpen] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
-  const [graphTarget, setGraphTarget] = useState("C12382");
+  const [graphTarget, setGraphTarget] = useState("3000003");
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -40,7 +40,7 @@ export default function EvidencePage() {
             <button
               type="button"
               onClick={() => {
-                setGraphTarget("C12382");
+                setGraphTarget("3000003");
                 setGraphModalOpen(true);
               }}
               className="bg-[#ffe45c] hover:bg-[#fed932] border-[2.5px] border-black px-3.5 py-1.5 font-mono font-bold text-xs uppercase shadow-[2px_2px_0_#050505] cursor-pointer"

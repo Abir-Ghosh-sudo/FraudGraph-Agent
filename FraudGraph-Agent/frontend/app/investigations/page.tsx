@@ -16,7 +16,7 @@ export default function InvestigationsPage() {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [graphModalOpen, setGraphModalOpen] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
-  const [selectedTarget, setSelectedTarget] = useState("C12382");
+  const [selectedTarget, setSelectedTarget] = useState("3000003");
 
   const [cases, setCases] = useState<Case[]>([]);
   const [loadingCases, setLoadingCases] = useState(true);
@@ -62,7 +62,7 @@ export default function InvestigationsPage() {
             <button
               type="button"
               onClick={() => {
-                setSelectedTarget("C12382");
+                setSelectedTarget("3000003");
                 setGraphModalOpen(true);
               }}
               className="bg-[#ffe45c] hover:bg-[#fed932] border-[2.5px] border-black px-3.5 py-1.5 font-mono font-bold text-xs uppercase shadow-[2px_2px_0_#050505] cursor-pointer"
@@ -113,7 +113,7 @@ export default function InvestigationsPage() {
                     case_id: "HHG-001",
                     status: "investigating",
                     risk_score: 0.61,
-                    customer_id: "C12382",
+                    customer_id: "3000003",
                     fraud_type: "risk_score_anomaly",
                     title: "Regional Billing Anomaly",
                     evidence_ids: ["ev_1", "ev_2"],

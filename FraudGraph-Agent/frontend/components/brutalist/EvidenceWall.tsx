@@ -112,7 +112,7 @@ export function DefaultEvidenceWall({ onAction }: DefaultEvidenceSetProps) {
       id: "cust-1",
       type: "CUSTOMER",
       title: "CUSTOMER ID",
-      value: "C12382",
+      value: "3000003",
       subtitle: "HIGH RISK SCORE 0.91",
       tint: "blue",
       rotation: 0.4,

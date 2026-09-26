@@ -38,7 +38,7 @@ export function ProtocolModal({
   const [currentStageIndex, setCurrentStageIndex] = useState<number>(0);
 
   // Target input
-  const [targetAccount, setTargetAccount] = useState("C12382");
+  const [targetAccount, setTargetAccount] = useState("3000003");
   const [targetType, setTargetType] = useState<"customer" | "transaction" | "account">("customer");
 
   /**
@@ -320,13 +320,13 @@ export function ProtocolModal({
                 value={targetAccount}
                 onChange={(e) => setTargetAccount(e.target.value)}
                 className="sm:col-span-3 bg-[#f7f4ea] border-[2px] border-black px-3 py-2 font-mono font-black text-sm text-black outline-none"
-                placeholder="e.g. C12382, 3514030, N-8901..."
+                placeholder="e.g. 3000003, C:22374..."
               />
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-mono text-[10px] font-bold text-neutral-500 uppercase">Presets:</span>
-              {["C12382", "3514030", "C11891-K1", "acc_mule_8829"].map((preset) => (
+              {["3000003", "3514030", "C11891-K1", "acc_mule_8829"].map((preset) => (
                 <button
                   key={preset}
                   type="button"

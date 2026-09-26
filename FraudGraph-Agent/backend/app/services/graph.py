@@ -19,6 +19,22 @@ from backend.tigergraph.mcp import (
 
 logger = get_logger(__name__)
 
+# The derived graph is process-wide, not per-service-instance. GraphService
+# instances are constructed through FastAPI's dependency graph, so a graph
+# attached to one instance is not guaranteed to be visible to another. Keeping
+# the reference here means the startup build and every request see the same
+# graph regardless of how the service was instantiated.
+_RELATIONAL_GRAPH: RelationalFraudGraph | None = None
+
+
+def set_relational_graph(graph: RelationalFraudGraph | None) -> None:
+    global _RELATIONAL_GRAPH
+    _RELATIONAL_GRAPH = graph
+
+
+def get_relational_graph() -> RelationalFraudGraph | None:
+    return _RELATIONAL_GRAPH
+
 
 class GraphService:
     def __init__(
@@ -49,7 +65,7 @@ class GraphService:
         return self.settings.tigergraph_configured
 
     def _relational_or_none(self) -> RelationalFraudGraph | None:
-        graph = self.relational
+        graph = self.relational or get_relational_graph()
         if graph is not None and not graph.is_empty:
             return graph
         return None
@@ -215,9 +231,9 @@ class GraphService:
 
     def investigation(
         self,
-        root_node_id: str,
-        query_name: str,
-        parameters: dict[str, Any] | None = None,
+          root_node_id: str,
+          query_name: str | None,
+          parameters: dict[str, Any] | None = None,
         *,
         depth: int = 2,
         limit: int = 100,
@@ -237,6 +253,14 @@ class GraphService:
         if not root_node_id.strip():
             raise ValueError(
                 "root_node_id cannot be empty."
+            )
+
+        if not query_name or not query_name.strip():
+            # TigerGraph is the active source, so a traversal-only request
+            # cannot be satisfied: it needs a registered query to collect
+            # relationships. Say so rather than returning an empty graph.
+            raise ValueError(
+                "query_name is required when TigerGraph is the graph source."
             )
 
         if not 0 <= depth <= 10:

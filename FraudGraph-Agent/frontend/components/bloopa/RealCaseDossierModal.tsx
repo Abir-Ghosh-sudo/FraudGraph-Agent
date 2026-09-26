@@ -24,6 +24,7 @@ export function RealCaseDossierModal({
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [loading, setLoading] = useState(true);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Close on Escape key
   const handleKeyDown = useCallback(
@@ -45,95 +46,23 @@ export function RealCaseDossierModal({
     async function loadCases() {
       setLoading(true);
       setExportNotice(null);
+      setLoadError(null);
       try {
         const raw = await casesApi.list<unknown>();
         const list = Array.isArray(raw) ? (raw as Case[]) : [];
-        if (list.length > 0) {
-          setCases(list);
-          const matched = initialCaseId ? list.find((c) => c.case_id === initialCaseId) : null;
-          setSelectedCase(matched || list[0]);
-        } else {
-          // Real benchmark case pack fallback
-          const fallback: Case[] = [
-            {
-              case_id: "HHG-001",
-              investigation_id: "inv_hhg_001",
-              transaction_id: "3514030",
-              customer_id: "C12382",
-              account_id: "C12382-K1",
-              title: "High Velocity Regional Anomaly",
-              description: "Real-time model scored transaction 3514030 ($77.07, in billing region 444.0) at 0.61. Review and decide.",
-              status: "investigating",
-              outcome: null,
-              risk_score: 0.61,
-              risk_level: "high",
-              fraud_type: "velocity_anomaly",
-              evidence_ids: ["ev_3514030_1", "ev_3514030_2"],
-              findings: [
-                {
-                  finding_id: "f_1",
-                  title: "Billing Region Collision",
-                  description: "Billing region 444.0 contradicts historical user activity pattern.",
-                  evidence_ids: ["ev_3514030_1"],
-                  confidence: 0.88,
-                  created_at: new Date().toISOString(),
-                },
-              ],
-              decisions: [],
-              actions: [],
-              related_cases: [
-                {
-                  memory_id: "mem_hhg_007",
-                  case_id: "HHG-007",
-                  similarity: null,
-                  relevance_reason: null,
-                },
-              ],
-              memory_ids: [],
-              created_at: "2016-12-05T01:55:28Z",
-              updated_at: new Date().toISOString(),
-              resolved_at: null,
-              closed_at: null,
-            },
-            {
-              case_id: "HHG-002",
-              investigation_id: "inv_hhg_002",
-              transaction_id: "3478782",
-              customer_id: "C11891",
-              account_id: "C11891-K1",
-              title: "Online Velocity Burst Syndicate",
-              description: "Real-time model scored transaction 3478782 ($292.36, online) at 0.79. Review and decide.",
-              status: "open",
-              outcome: null,
-              risk_score: 0.79,
-              risk_level: "critical",
-              fraud_type: "online_burst",
-              evidence_ids: ["ev_3478782_1"],
-              findings: [
-                {
-                  finding_id: "f_2",
-                  title: "Rapid Micro-Transactions",
-                  description: "Repeated card-not-present online charges across multiple merchant endpoints.",
-                  evidence_ids: ["ev_3478782_1"],
-                  confidence: 0.94,
-                  created_at: new Date().toISOString(),
-                },
-              ],
-              decisions: [],
-              actions: [],
-              related_cases: [],
-              memory_ids: [],
-              created_at: "2016-11-22T23:27:07Z",
-              updated_at: new Date().toISOString(),
-              resolved_at: null,
-              closed_at: null,
-            },
-          ];
-          setCases(fallback);
-          setSelectedCase(fallback[0]);
-        }
-      } catch {
-        // Fallback
+        setCases(list);
+        const matched = initialCaseId
+          ? list.find((c) => c.case_id === initialCaseId)
+          : null;
+        setSelectedCase(matched || list[0] || null);
+      } catch (err) {
+        setCases([]);
+        setSelectedCase(null);
+        setLoadError(
+          err instanceof Error
+            ? err.message
+            : "Could not reach the cases API.",
+        );
       } finally {
         setLoading(false);
       }
@@ -151,11 +80,14 @@ export function RealCaseDossierModal({
 
   const handleExportSar = () => {
     if (!selectedCase) return;
-    // Real honest SAR export compliance feedback
+    // There is no SAR export endpoint on the backend, so this reports that
+    // honestly rather than inventing a document hash and claiming a FinCEN
+    // batch is ready for transmission.
     setExportNotice(
-      `SAR Docket compiled for Case #${selectedCase.case_id}. Document hash: sha256:${selectedCase.case_id.toLowerCase()}8f9c. Full FinCEN batch transmission ready.`
+      "SAR export is not implemented on the API. No docket was generated and " +
+        "nothing was transmitted.",
     );
-    onShowToast(`📁 Compiled SAR Docket for ${selectedCase.case_id}`);
+    onShowToast("SAR export unavailable — no backend route exists.");
   };
 
   return (
@@ -204,6 +136,28 @@ export function RealCaseDossierModal({
 
         {/* Case List Selector Strip */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-5">
+          {loadError ? (
+            <div className="col-span-full border-[3px] border-black bg-[#ff9aa2] px-4 py-3 shadow-[4px_4px_0_#050505]">
+              <p className="font-mono text-[11px] font-black uppercase text-black">
+                Could not reach the cases API: {loadError}
+              </p>
+            </div>
+          ) : !loading && cases.length === 0 ? (
+            <div className="col-span-full border-[3px] border-black bg-[var(--mint)] px-4 py-4 shadow-[4px_4px_0_#050505]">
+              <p className="font-syne font-black text-sm uppercase text-black mb-1">
+                No cases on file
+              </p>
+              <p className="font-mono text-[11px] font-semibold text-black">
+                The backend returned an empty case list. Start an investigation
+                to populate this dossier.
+              </p>
+            </div>
+          ) : null}
+          {loading ? (
+            <div className="col-span-full font-mono text-[11px] font-bold uppercase text-neutral-600 py-2">
+              Loading cases…
+            </div>
+          ) : null}
           {cases.map((c) => (
             <button
               key={c.case_id}
