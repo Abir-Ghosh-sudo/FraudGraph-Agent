@@ -11,7 +11,7 @@ import type { Case } from "@/types/case";
 export interface DashboardStats {
   /** Cases in an active pipeline state, counted from the cases API. */
   activeCases: number;
-  /** Cases the backend classified as high risk. */
+  /** Cases the backend classified as high or critical risk. */
   highRiskCases: number;
   /** Total cases returned by the backend. */
   totalCases: number;
@@ -78,10 +78,9 @@ export function useDashboardStats(refreshIntervalMs = 15000) {
     setError(null);
 
     try {
-      const [allCasesRaw, highRiskRaw, investigationsRaw, benchmarkRaw] =
+      const [allCasesRaw, investigationsRaw, benchmarkRaw] =
         await Promise.allSettled([
           casesApi.list<unknown>(),
-          casesApi.list<unknown>({ risk_level: "high" }),
           investigationsApi.list<unknown>(),
           import("@/lib/api").then((m) =>
             m.benchmarkApi.run<{ ground_truth_available?: boolean }>(),
@@ -89,8 +88,15 @@ export function useDashboardStats(refreshIntervalMs = 15000) {
         ]);
 
       const allCases = asArray<Case>(allCasesRaw);
-      const highRiskCases = asArray<Case>(highRiskRaw);
       const investigations = asArray<unknown>(investigationsRaw);
+
+      // Derived from the single cases response rather than a second
+      // `risk_level=high` request: the backend filter is an exact enum match,
+      // so asking for "high" alone silently excluded "critical" cases and the
+      // card under-reported the most severe work on the board.
+      const highRiskCases = allCases.filter(
+        (c) => c.risk_level === "high" || c.risk_level === "critical",
+      );
 
       const activeCases = allCases.filter((c) =>
         [

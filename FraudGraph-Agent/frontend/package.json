@@ -3,8 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "powershell -Command \"Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }\"",
+    "clean:cache": "powershell -Command \"Remove-Item -Recurse -Force '.next' -ErrorAction SilentlyContinue; exit 0\"",
+    "predev": "powershell -Command \"Remove-Item -Recurse -Force '.next' -ErrorAction SilentlyContinue; Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; exit 0\"",
     "dev": "next dev --port 3000",
+    "prebuild": "npm run clean:cache",
     "build": "next build",
     "start": "next start --port 3000",
     "lint": "next lint"

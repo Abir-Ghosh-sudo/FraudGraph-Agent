@@ -7,7 +7,11 @@ export interface GraphNode {
   id: string;
   label: string;
   type: "customer" | "transaction" | "card" | "device" | "mule" | "synthetic" | "crypto" | "merchant" | "victim" | string;
-  riskScore: number;
+  /**
+   * Optional: the graph backend may not score every vertex. `undefined` means
+   * "not scored" and must render as a dash, never as a number.
+   */
+  riskScore?: number;
   x?: number;
   y?: number;
   volume?: string;
@@ -169,16 +173,22 @@ export function FraudGraphCanvas({
   const [inputError, setInputError] = useState<string | null>(null);
 
   // Graph Data State
-  const [nodes, setNodes] = useState<GraphNode[]>(BENCHMARK_NODES);
-  const [edges, setEdges] = useState<GraphEdge[]>(BENCHMARK_EDGES);
-  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(BENCHMARK_NODES[0]);
+  // Starts empty on purpose: the canvas must never present fabricated
+  // vertices as if they came from TigerGraph. Real data appears only after a
+  // successful scan against the configured graph backend.
+  const [nodes, setNodes] = useState<GraphNode[]>([]);
+  const [edges, setEdges] = useState<GraphEdge[]>([]);
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
 
   // Loading & Error States (as required by prompt)
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBackendOffline, setIsBackendOffline] = useState(false);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
-  const [isBenchmarkFallback, setIsBenchmarkFallback] = useState(true);
+  const [isGraphConfigured, setIsGraphConfigured] = useState<boolean | null>(
+    null,
+  );
+  const [isBenchmarkFallback, setIsBenchmarkFallback] = useState(false);
 
   // Filter States
   const [showCyclesOnly, setShowCyclesOnly] = useState(false);
@@ -191,8 +201,8 @@ export function FraudGraphCanvas({
   // Graph Metadata for Bottom Bar
   const [graphStats, setGraphStats] = useState({
     depth: 2,
-    queryTimeMs: 42,
-    source: "BENCHMARK_VERIFIED",
+    queryTimeMs: 0,
+    source: "NO_QUERY_RUN",
   });
 
   // Check backend health on mount
@@ -204,6 +214,17 @@ export function FraudGraphCanvas({
         if (isMounted && res && typeof res === "object") {
           setIsLiveConnected(true);
           setIsBackendOffline(false);
+        }
+        // Only /health/readiness reports whether TigerGraph is configured.
+        try {
+          const readiness = await healthApi.readiness<{
+            tigergraph_configured?: boolean;
+          }>();
+          if (isMounted) {
+            setIsGraphConfigured(readiness?.tigergraph_configured ?? null);
+          }
+        } catch {
+          if (isMounted) setIsGraphConfigured(null);
         }
       } catch {
         if (isMounted) {
@@ -260,15 +281,22 @@ export function FraudGraphCanvas({
           return;
         }
 
+        // Normalize response.
+        // Every field is taken verbatim from the backend. When a field is
+        // absent it is left undefined rather than replaced with an invented
+        // value (a fabricated "$142,000" volume or a made-up risk of 75 would
+        // read as real intelligence on the canvas).
         const normalizedNodes: GraphNode[] = rawNodes.map((n: Record<string, unknown>, idx: number) => ({
           id: String(n.node_id || n.id || `V-${idx}`),
           label: String(n.label || n.node_id || n.id || `Vertex ${idx}`),
           type: String(n.node_type || n.type || targetType),
-          riskScore: typeof n.risk_score === "number" ? Math.round(n.risk_score * 100) : 75,
-          volume: typeof n.volume === "string" ? n.volume : "$142,000",
-          degree: typeof n.degree === "number" ? n.degree : 3,
-          centrality: 0.65,
-          flaggedReason: typeof n.flagged_reason === "string" ? n.flagged_reason : "Traversed via TigerGraph topology query",
+          riskScore: typeof n.risk_score === "number" ? n.risk_score : undefined,
+          volume: typeof n.volume === "string" ? n.volume : undefined,
+          degree: typeof n.degree === "number" ? n.degree : undefined,
+          centrality:
+            typeof n.centrality === "number" ? n.centrality : undefined,
+          flaggedReason:
+            typeof n.flagged_reason === "string" ? n.flagged_reason : undefined,
           properties: (n.properties as Record<string, unknown>) || {},
         }));
 
@@ -276,8 +304,8 @@ export function FraudGraphCanvas({
           id: String(e.edge_id || e.id || ""),
           from: String(e.source_id || e.source || e.from || ""),
           to: String(e.target_id || e.target || e.to || ""),
-          amount: typeof e.amount === "string" ? e.amount : "$50,000",
-          hops: typeof e.hops === "number" ? e.hops : 1,
+          amount: typeof e.amount === "string" ? e.amount : undefined,
+          hops: typeof e.hops === "number" ? e.hops : undefined,
           type: String(e.edge_type || e.type || "transacted"),
           isCycle: Boolean(e.is_cycle || e.isCycle),
           properties: (e.properties as Record<string, unknown>) || {},
@@ -315,12 +343,14 @@ export function FraudGraphCanvas({
     [targetInput, targetType, onAction]
   );
 
-  // Quick Preset Samples from Real Case Pack
+  // Quick Preset entity ids for the search box. These are id strings only:
+  // no risk score or amount is asserted here, because those values are only
+  // known once a real graph scan returns them.
   const samplePresets = [
-    { label: "C12382", type: "customer" as const, desc: "Case HHG-001 Customer" },
-    { label: "3514030", type: "transaction" as const, desc: "Flagged Txn ($77.07)" },
-    { label: "C11891-K1", type: "card" as const, desc: "High Risk Card (0.79)" },
-    { label: "N-8901", type: "account" as const, desc: "Mule Ring Hub (98% Risk)" },
+    { label: "C12382", type: "customer" as const, desc: "Customer id" },
+    { label: "3514030", type: "transaction" as const, desc: "Transaction id" },
+    { label: "C11891-K1", type: "card" as const, desc: "Card id" },
+    { label: "N-8901", type: "account" as const, desc: "Account id" },
   ];
 
   const handleSelectPreset = (preset: (typeof samplePresets)[0]) => {
@@ -340,18 +370,22 @@ export function FraudGraphCanvas({
       setIsBenchmarkFallback(true);
       setGraphStats({
         depth: 2,
-        queryTimeMs: 18,
-        source: "BENCHMARK_VERIFIED",
+        queryTimeMs: 0,
+        source: "SAMPLE_DATA_NOT_LIVE",
       });
       setLoading(false);
-      onAction("Loaded verified case benchmark graph topology.");
+      onAction("Loaded SAMPLE topology — this is illustrative data, not a live TigerGraph result.");
     }, 300);
   };
 
   // Filter nodes & edges
   const filteredNodes = useMemo(() => {
     return nodes.filter((n) => {
-      if (highRiskOnly && n.riskScore < 85) return false;
+      // Unscored vertices are not treated as high risk, and are not silently
+      // counted as low risk either; they simply fail the filter explicitly.
+      if (highRiskOnly && !(typeof n.riskScore === "number" && n.riskScore >= 85)) {
+        return false;
+      }
       return true;
     });
   }, [nodes, highRiskOnly]);
@@ -631,9 +665,31 @@ export function FraudGraphCanvas({
                   onClick={handleLoadBenchmarkCache}
                   className="bg-white hover:bg-neutral-100 border-[2.5px] border-black px-4 py-2 font-mono font-black text-xs uppercase shadow-[2px_2px_0_#050505] cursor-pointer"
                 >
-                  LOAD VERIFIED BENCHMARK TOPOLOGY
+                  LOAD SAMPLE TOPOLOGY (DEMO)
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* 2b. IDLE STATE - no query has been run yet */}
+          {!loading && !errorMessage && nodes.length === 0 && (
+            <div className="absolute inset-0 z-20 bg-white/95 border-[3px] border-black m-3 p-6 flex flex-col items-center justify-center text-center">
+              <span className="sticker sticker-mint text-xs font-mono font-bold mb-3">
+                AWAITING SCAN
+              </span>
+              <h3 className="font-syne font-black text-xl sm:text-2xl uppercase text-black mb-2">
+                No Graph Loaded
+              </h3>
+              <p className="font-mono text-xs font-semibold text-neutral-700 max-w-md mb-1 leading-relaxed">
+                Enter a target above and run a graph scan. Vertices, edges and
+                risk scores are rendered only as returned by the graph backend.
+              </p>
+              {isGraphConfigured === false ? (
+                <p className="font-mono text-[11px] font-bold uppercase text-[var(--red)] max-w-md mt-2">
+                  Graph backend is not configured. Set TIGERGRAPH_* settings on
+                  the API to enable live traversal.
+                </p>
+              ) : null}
             </div>
           )}
 
@@ -750,7 +806,7 @@ export function FraudGraphCanvas({
                       fontSize="13"
                       fill={node.type === "mule" ? "#ffffff" : "#050505"}
                     >
-                      {node.riskScore}
+                      {node.riskScore ?? "—"}
                     </text>
 
                     {/* Node Label Below */}
@@ -841,14 +897,18 @@ export function FraudGraphCanvas({
                 <span className="font-mono text-xs font-bold uppercase">RISK SCORE</span>
                 <span
                   className={`font-display text-lg px-2.5 py-0.5 border-[2px] border-black ${
-                    selectedNode.riskScore > 85
+                    typeof selectedNode.riskScore !== "number"
+                      ? "bg-neutral-200 text-neutral-700"
+                      : selectedNode.riskScore > 85
                       ? "bg-[var(--red)] text-white"
                       : selectedNode.riskScore > 50
                       ? "bg-[var(--yellow)]"
                       : "bg-[var(--mint)]"
                   }`}
                 >
-                  {selectedNode.riskScore}% RISK
+                  {typeof selectedNode.riskScore === "number"
+                    ? `${selectedNode.riskScore}% RISK`
+                    : "NOT SCORED"}
                 </span>
               </div>
 

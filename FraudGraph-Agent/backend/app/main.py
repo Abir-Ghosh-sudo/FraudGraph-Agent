@@ -26,6 +26,7 @@ async def lifespan(
     settings: Settings = app.state.settings
     initialize_runtime(settings)
     _maybe_start_ingest(settings)
+    _maybe_build_relational_graph(settings)
     yield
 
 
@@ -72,6 +73,45 @@ def _maybe_start_ingest(settings: Settings) -> None:
             logger.warning("startup ingest failed", error=str(exc))
 
     threading.Thread(target=_run, name="ingest", daemon=True).start()
+
+
+def _maybe_build_relational_graph(settings: Settings) -> None:
+    """Derive a fraud graph from the raw ledger when TigerGraph is absent.
+
+    Without this the graph endpoints have nothing to serve, because the
+    TigerGraph client is guarded by a configuration check. The graph is built
+    from real transaction/identity rows and real model output; it is never
+    fabricated. Built in a thread because it streams the ledger.
+    """
+    transactions = settings.raw_data_dir / "transactions.csv"
+    identity = settings.raw_data_dir / "identity.csv"
+
+    if not transactions.exists():
+        return
+
+    def _run() -> None:
+        try:
+            from backend.app.dependencies import get_graph_service
+            from backend.app.services.relational_graph import RelationalFraudGraph
+
+            graph = RelationalFraudGraph.from_dataset(
+                transactions_csv=transactions,
+                identity_csv=identity,
+                model_path=settings.fraud_model_path,
+                metadata_path=settings.fraud_model_metadata_path,
+                max_rows=settings.graph_build_row_limit,
+                score_transactions=settings.graph_score_row_limit,
+            )
+            service = get_graph_service()
+            if service is not None:
+                service.relational = graph
+                logger.info("relational graph attached to graph service")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("relational graph build failed", error=str(exc))
+
+    threading.Thread(
+        target=_run, name="relational-graph", daemon=True
+    ).start()
 
 
 def create_app(

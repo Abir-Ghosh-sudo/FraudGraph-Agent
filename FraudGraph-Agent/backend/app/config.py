@@ -232,6 +232,14 @@ class Settings(BaseSettings):
     auto_ingest: bool = True
     ingest_case_limit: int = 10
 
+    # ------------------------------------------------------------------
+    # Relational graph build (used when TigerGraph is unavailable)
+    # ------------------------------------------------------------------
+
+    build_relational_graph: bool = True
+    graph_build_row_limit: int = 15_000
+    graph_score_row_limit: int = 150
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
