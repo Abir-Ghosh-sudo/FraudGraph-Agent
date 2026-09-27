@@ -1,927 +1,1125 @@
-# 🕸️ FraudGraph-Agent
-
-### **Agentic AI for Intelligent Fraud Detection, Investigation & Explainable Risk Analysis**
+# 🕵️ FraudGraph-Agent
 
 <p align="center">
-
-**Fraud doesn't happen in isolation — it happens in networks.**
-
-FraudGraph-Agent combines **Graph Intelligence, Agentic AI, Risk Analysis, and Explainable Investigation** to transform suspicious financial activity into an actionable investigation workflow.
-
+  <img src="https://img.shields.io/badge/FraudGraph--Agent-000000?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/LangGraph-Agentic%20AI-000000?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/TigerGraph-Graph%20Intelligence-orange?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/TigerGraph%20MCP-MCP-purple?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/LightGBM-Fraud%20ML-green?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/GraphRAG-Evidence%20Reasoning-red?style=for-the-badge" />
 </p>
 
 <p align="center">
+  <strong>AI-Powered Agentic Fraud Investigation & Next-Best Action Engine</strong>
+</p>
 
-![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge\&logo=python\&logoColor=white)
-![AI](https://img.shields.io/badge/AI-Agentic%20AI-8B5CF6?style=for-the-badge)
-![Graph](https://img.shields.io/badge/Graph-GraphRAG-06B6D4?style=for-the-badge)
-![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?style=for-the-badge\&logo=fastapi\&logoColor=white)
-![Neo4j](https://img.shields.io/badge/Graph-Neo4j-4581C3?style=for-the-badge\&logo=neo4j\&logoColor=white)
-![React](https://img.shields.io/badge/UI-React-61DAFB?style=for-the-badge\&logo=react\&logoColor=black)
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
-
+<p align="center">
+  <i>Investigate. Connect. Reason. Decide. Act. Learn.</i>
 </p>
 
 ---
 
-## 🚨 The Problem
+## 🚨 Overview
 
-Modern financial fraud is rarely limited to a single transaction.
+**FraudGraph-Agent** is an AI-powered, agentic fraud investigation platform designed to investigate suspicious financial activity, connect fragmented evidence, assess fraud risk, reason under uncertainty, recommend the **Next Best Action (NBA)**, and maintain case memory for future investigations.
+
+Traditional fraud systems often stop at:
+
+> **"This transaction looks suspicious."**
+
+FraudGraph-Agent goes further:
+
+> **"Why is it suspicious? What evidence supports it? What entities are connected? How certain are we? What should happen next? Does the action require approval? What happened in similar historical cases?"**
+
+The platform combines:
+
+* 🤖 Agentic AI
+* 🧠 LangGraph
+* 🌐 TigerGraph
+* 🔌 TigerGraph MCP
+* 📊 LightGBM
+* 🔎 GraphRAG
+* 🧠 Case Memory
+* 🔬 Fraud Pattern Detection
+* ⚖️ Policy Reasoning
+* 👤 Human-in-the-Loop Approval
+* 🎯 Next Best Action Recommendation
+
+into a unified investigation workflow.
+
+---
+
+# 🖥️ Dashboard
+
+FraudGraph-Agent provides a visual investigation dashboard for monitoring:
+
+* Fraud activity
+* Investigation cases
+* Risk levels
+* Graph relationships
+* Evidence
+* Agent activity
+* Recommendations
+* Approval requests
+* Investigation history
+
+### 📸 Dashboard Preview
+
+![FraudGraph-Agent Dashboard](docs/images/dashboard.png)
+
+> Replace `docs/images/dashboard.png` with the actual dashboard screenshot.
+
+---
+
+# 🎯 The Problem
+
+Modern financial fraud rarely exists as an isolated transaction.
 
 A suspicious transaction may be connected to:
 
-* 👤 Multiple accounts
-* 💳 Shared payment instruments
-* 📱 Common devices
-* 🌐 Reused IP addresses
-* 🏦 Multiple merchants
-* 🔁 Repeated transaction patterns
-* 🕸️ Coordinated fraud rings
-* 🧩 Hidden relationships between seemingly unrelated entities
-
-Traditional rule-based systems often analyze transactions independently.
-
-That creates a major problem:
-
-> **A fraudulent transaction may look normal by itself while becoming highly suspicious when its relationships are examined.**
-
-FraudGraph-Agent approaches the problem differently.
-
-Instead of asking only:
-
-**"Is this transaction fraudulent?"**
-
-the system asks:
-
-> **"What is connected to this transaction, why is it suspicious, what evidence supports the suspicion, and how should an investigator respond?"**
-
----
-
-# 🧠 What is FraudGraph-Agent?
-
-**FraudGraph-Agent** is an intelligent fraud investigation platform that combines:
-
 ```text
-Financial Transactions
-        │
-        ▼
-┌──────────────────────┐
-│   Risk Detection     │
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│   Graph Analysis     │
-│ Accounts • Devices   │
-│ Cards • IPs • Links  │
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│   Agentic Reasoning  │
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│ Evidence Retrieval   │
-│      + GraphRAG      │
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│ Investigation Report │
-└──────────────────────┘
+Customer
+   │
+   ├── Card
+   │
+   ├── Device
+   │
+   ├── IP / Connection
+   │
+   ├── Previous Transactions
+   │
+   └── Previous Fraud Cases
 ```
 
-The result is not simply a fraud score.
+A transaction-level fraud score alone cannot reveal the complete relationship network behind suspicious activity.
 
-The platform produces an **investigation-oriented explanation** backed by relationships, evidence, and reasoning.
+Fraud investigators therefore need to answer:
+
+* Is this transaction actually fraudulent?
+* What type of fraud is occurring?
+* Which customers, cards, devices, and IPs are connected?
+* Has this entity appeared in previous fraud cases?
+* How strong is the evidence?
+* Is additional evidence required?
+* Should the transaction be allowed, declined, monitored, or escalated?
+* Does the action require human approval?
+* What happened in similar historical cases?
+
+FraudGraph-Agent addresses this gap through an **evidence-driven, graph-aware and policy-controlled agentic investigation workflow**.
 
 ---
 
-# ✨ Core Capabilities
+# 💡 Core Concept
 
-## 🕸️ 1. Graph-Based Fraud Detection
+Instead of using a single ML score as the final decision, FraudGraph-Agent combines multiple sources of intelligence:
 
-Financial entities are represented as an interconnected graph.
+```text
+Fraud Signal / Customer Report / Analyst Request
+                    │
+                    ▼
+             ┌─────────────┐
+             │  LangGraph  │
+             │    Agent    │
+             └──────┬──────┘
+                    │
+          ┌─────────┼─────────┐
+          ▼         ▼         ▼
+      LightGBM  TigerGraph  GraphRAG
+        ML        + MCP     + Memory
+          │         │         │
+          └─────────┼─────────┘
+                    ▼
+            Evidence + Risk +
+               Uncertainty
+                    │
+                    ▼
+             Policy Engine
+                    │
+                    ▼
+             Next Best Action
+                    │
+             ┌──────┴──────┐
+             ▼             ▼
+       Human Approval   Allowed Action
+             │             │
+             └──────┬──────┘
+                    ▼
+                Explanation
+                    │
+                    ▼
+                Case Memory
+```
+
+---
+
+# 🤖 Agentic Investigation
+
+The investigation is orchestrated through **LangGraph**.
+
+The workflow contains:
+
+```text
+TRIGGER
+   ↓
+INVESTIGATE
+   ↓
+GATHER EVIDENCE
+   ↓
+DETECT PATTERNS
+   ↓
+ASSESS RISK
+   ↓
+ASSESS UNCERTAINTY
+   ↓
+REQUEST EVIDENCE
+   ↓
+REASSESS
+   ↓
+RECOMMEND ACTION
+   ↓
+APPROVAL
+   ↓
+EXECUTE ACTION
+   ↓
+EXPLAIN
+   ↓
+UPDATE MEMORY
+   ↓
+COMPLETE
+```
+
+The workflow can conditionally request additional evidence when the current evidence is insufficient.
+
+This prevents the system from blindly acting on a single suspicious signal.
+
+---
+
+# 🧠 Machine Learning
+
+## LightGBM Fraud Prediction
+
+The transaction-level fraud prediction model uses:
+
+**LightGBM — Gradient Boosted Decision Trees (GBDT)**
+
+The model generates a probability between `0` and `1`.
+
+```text
+Transaction
+     ↓
+Feature Engineering
+     ↓
+147 Features
+     ↓
+LightGBM
+     ↓
+Fraud Probability
+     ↓
+Risk Assessment
+```
+
+The model uses:
+
+* Transaction information
+* Card information
+* Customer information
+* Identity information
+* Device information
+* Behavioral information
+* Temporal information
+
+The ML model is intentionally **not treated as the final decision maker**.
+
+Instead:
+
+```text
+ML Probability
+      +
+Graph Evidence
+      +
+Historical Cases
+      +
+Fraud Patterns
+      +
+Policy
+      +
+Uncertainty
+      ↓
+Agent Decision
+```
+
+The currently retrained model is **v1.1.0**, with calibrated probability behavior designed to avoid the degenerate behavior observed in the initial fraud-heavy training setup.
+
+---
+
+# 🌐 TigerGraph
+
+TigerGraph provides the **graph intelligence layer**.
+
+Fraud is often a relationship problem rather than an isolated transaction problem.
+
+The graph can represent relationships such as:
+
+```text
+Customer
+   │
+   ├──── owns ────► Card
+   │                   │
+   │                   └──── performs ────► Transaction
+   │                                              │
+   │                                              ├── uses ──► Device
+   │                                              │
+   │                                              └── originates ──► IP
+   │
+   └──── related to ────► Other Customer
+```
+
+This enables investigation of:
+
+* Shared devices
+* Shared IP addresses
+* Connected customers
+* Connected cards
+* Transaction relationships
+* Suspicious entity clusters
+* Repeated behavioral patterns
+* Historical relationships
+
+### Graph
+
+```text
+Transaction_Fraud
+```
+
+---
+
+# 🔌 TigerGraph MCP
+
+FraudGraph-Agent uses **TigerGraph MCP (Model Context Protocol)** as the bridge between the AI agent and TigerGraph.
+
+Conceptually:
+
+```text
+LangGraph Agent
+      │
+      ▼
+  MCP Client
+      │
+      ▼
+TigerGraph MCP
+      │
+      ▼
+ TigerGraph
+```
+
+This architecture avoids tightly coupling the reasoning layer to a collection of custom graph wrappers.
+
+TigerGraph MCP can expose capabilities related to:
+
+* Graph discovery
+* Schema inspection
+* Vertex operations
+* Edge operations
+* GSQL
+* Queries
+* Loading operations
+* Graph statistics
+* Vector operations
+* Tool discovery
+
+### Installation
+
+```bash
+pip install tigergraph-mcp
+```
+
+Run:
+
+```bash
+tigergraph-mcp -vv
+```
+
+---
+
+# 🔎 GraphRAG
+
+FraudGraph-Agent combines graph retrieval with contextual document and historical-case retrieval.
+
+```text
+                 Investigation
+                      │
+             ┌────────┴────────┐
+             ▼                 ▼
+      Graph Retrieval    Document Retrieval
+             │                 │
+             ▼                 ▼
+      Entities + Paths    Policies + Cases
+             │                 │
+             └────────┬────────┘
+                      ▼
+               Hybrid Retrieval
+                      │
+                      ▼
+                  Reranking
+                      │
+                      ▼
+            Investigation Context
+```
+
+GraphRAG allows the agent to reason over:
+
+* Graph relationships
+* Historical cases
+* Fraud patterns
+* Policies
+* Regulatory context
+* Previous decisions
+* Investigation evidence
+
+---
+
+# 🧠 Case Memory
+
+FraudGraph-Agent maintains investigation memory so previous investigations can inform future investigations.
+
+Memory can contain:
+
+* Findings
+* Evidence
+* Decisions
+* Actions
+* Outcomes
+* Historical patterns
+* Investigation context
+
+Similar cases can be retrieved through:
+
+```text
+Vector Similarity
+       +
+Keyword Search
+       ↓
+Similar Case Retrieval
+       ↓
+Current Investigation
+```
+
+This creates a continuous investigation loop:
+
+```text
+Investigation
+      ↓
+Decision
+      ↓
+Outcome
+      ↓
+Case Memory
+      ↓
+Future Investigation
+```
+
+---
+
+# 🎯 Next Best Action
+
+The goal is not simply to classify transactions.
+
+The agent must determine:
+
+> **What should happen next?**
+
+Possible actions include:
+
+```text
+ALLOW_TRANSACTION
+DECLINE_TRANSACTION
+MONITOR_CARD
+MONITOR_CONNECTED_CARDS
+WARN_CUSTOMER
+VERIFY_WITH_CUSTOMER
+STEP_UP_AUTH
+BLOCK_CARD
+BLOCK_ALL_CARDS
+CREATE_CASE
+GENERATE_REPORT
+FILE_REPORT
+ESCALATE_TO_ANALYST
+CLOSE_NO_FRAUD
+```
+
+The NBA engine considers:
+
+```text
+Risk
++
+Evidence
++
+Fraud Pattern
++
+Uncertainty
++
+Exposure
++
+Policy
++
+Historical Outcomes
++
+Approval Requirements
+```
+
+---
+
+# ⚖️ Policy-Aware Decisions
+
+The agent does not have unrestricted authority.
+
+Before sensitive actions:
+
+```text
+Recommendation
+      ↓
+Policy Check
+      ↓
+Action Allowed?
+      ↓
+Approval Required?
+      ↓
+Approval
+      ↓
+Execution
+```
+
+This creates a clear separation between:
+
+```text
+AI Recommendation
+        ≠
+Action Authorization
+```
+
+---
+
+# 🔐 Human-in-the-Loop Safety
+
+Sensitive actions can require human approval.
 
 Example:
 
 ```text
-                 ┌──────────────┐
-                 │   Device     │
-                 └──────┬───────┘
-                        │
-                        │ USED_BY
-                        ▼
-┌──────────┐       ┌──────────┐
-│ Account A │──────▶│ Account B│
-└────┬─────┘ TRANS └────┬─────┘
-     │                   │
-     │                   │
-     ▼                   ▼
-┌──────────┐       ┌──────────┐
-│ Merchant │       │ Account C│
-└──────────┘       └──────────┘
+Agent
+  ↓
+BLOCK_CARD
+  ↓
+Approval Required
+  ↓
+Human Reviewer
+  ↓
+APPROVED
+  ↓
+Execute
 ```
 
-This makes it possible to detect patterns such as:
+The workflow checks approval status before execution, while the action layer independently verifies authorization.
 
-* Shared devices
-* Account clusters
-* Suspicious transaction chains
-* Mule-account relationships
-* Repeated counterparties
-* Coordinated transaction activity
-* Potential fraud rings
+The system follows a **fail-closed** approach for sensitive operations.
 
 ---
 
-# 🤖 2. Agentic AI Investigation
+# 🔬 Fraud Pattern Detection
 
-FraudGraph-Agent uses specialized AI agents instead of relying on a single monolithic model.
+The system detects known and potentially undocumented fraud behaviors.
 
-Each agent has a specific responsibility.
+## Card Testing
 
-```text
-                    ┌─────────────────┐
-                    │ Investigation   │
-                    │    Request      │
-                    └────────┬────────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │ Agent Orchestrator│
-                    └────────┬────────┘
-                             │
-          ┌──────────────────┼──────────────────┐
-          ▼                  ▼                  ▼
-   ┌────────────┐     ┌────────────┐     ┌────────────┐
-   │ Risk Agent │     │ Graph Agent│     │ Evidence   │
-   │            │     │            │     │ Agent      │
-   └────────────┘     └────────────┘     └────────────┘
-          │                  │                  │
-          └──────────────────┼──────────────────┘
-                             ▼
-                    ┌─────────────────┐
-                    │ Reasoning Agent │
-                    └────────┬────────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │ Final Investigator│
-                    │     Report      │
-                    └─────────────────┘
-```
+Repeated small authorization attempts used to test whether a compromised card is active.
 
-This architecture allows the system to break a complex investigation into smaller, specialized reasoning tasks.
+## Card-Not-Present Fraud
+
+Suspicious online/card-not-present transaction behavior.
+
+## Card-Not-Present + New Device
+
+Suspicious transaction activity combined with a previously unseen device.
+
+## Out-of-Region Usage
+
+Transaction behavior inconsistent with the customer's established geographic pattern.
+
+## Account Takeover
+
+Signals suggesting compromised credentials or account control.
+
+The system can also identify **undocumented or coordinated abuse patterns** when observed behavior does not fit predefined categories.
 
 ---
 
-# 🔍 3. Explainable Risk Analysis
+# 📚 Dataset
 
-Instead of returning only:
+FraudGraph-Agent uses the **HHGOA / IEEE fraud investigation dataset**.
 
-```text
-Fraud Probability: 94%
-```
-
-the system can provide contextual evidence such as:
+The dataset contains:
 
 ```text
-Risk Level: HIGH
-
-Reasons:
-• Account shares a device with 7 other accounts.
-• 4 connected accounts were previously flagged.
-• Transaction velocity increased significantly.
-• Graph analysis detected a dense suspicious cluster.
-• Multiple accounts share overlapping identifiers.
+transactions.csv
+identity.csv
+closed_cases_history.csv
+case_pack.csv
+README.md
 ```
 
-This makes the result easier for human analysts to understand and verify.
+### Approximate Scale
 
----
+| Dataset          |  Size |
+| ---------------- | ----: |
+| Transactions     | ~590K |
+| Identity Records | ~144K |
+| Closed Cases     | ~5.5K |
+| Benchmark Cases  |    20 |
 
-# 🧩 4. GraphRAG
+Historical cases contain information such as:
 
-FraudGraph-Agent combines:
+* Confirmed fraud
+* Cleared investigations
+* Fraud patterns
+* Transaction IDs
+* Exposure
+* Connected cards
+* Actions taken
+* Reports
+* Analyst notes
 
-**Graph Retrieval + Semantic Retrieval + Agentic Reasoning**
+The benchmark contains **20 investigation cases**.
 
-to provide context-aware investigations.
-
-```text
-                 User Question
-                       │
-                       ▼
-              ┌─────────────────┐
-              │ Query Understanding│
-              └────────┬────────┘
-                       │
-             ┌─────────┴─────────┐
-             ▼                   ▼
-      ┌──────────────┐    ┌──────────────┐
-      │ Graph Search │    │ Vector Search│
-      └──────┬───────┘    └──────┬───────┘
-             │                   │
-             └─────────┬─────────┘
-                       ▼
-               ┌──────────────┐
-               │ Hybrid Context│
-               └───────┬──────┘
-                       ▼
-               ┌──────────────┐
-               │ AI Reasoning │
-               └───────┬──────┘
-                       ▼
-                Investigation
-                   Response
-```
-
-This allows the system to reason over both:
-
-* **Structured relationships**
-* **Unstructured evidence**
-
----
-
-# 🕵️ Investigation Workflow
-
-A typical investigation follows this pipeline:
-
-```text
-1. Suspicious Activity Detected
-              │
-              ▼
-2. Transaction / Entity Identification
-              │
-              ▼
-3. Risk Assessment
-              │
-              ▼
-4. Graph Expansion
-              │
-              ▼
-5. Relationship Discovery
-              │
-              ▼
-6. Evidence Retrieval
-              │
-              ▼
-7. Agentic Reasoning
-              │
-              ▼
-8. Fraud Pattern Identification
-              │
-              ▼
-9. Explainable Investigation Report
-              │
-              ▼
-10. Analyst Decision
-```
-
----
-
-# 🧠 Fraud Intelligence
-
-The graph enables investigation across multiple entity types.
-
-### Core Entities
-
-| Entity         | Description                         |
-| -------------- | ----------------------------------- |
-| 👤 Account     | Customer or financial account       |
-| 💳 Card        | Payment instrument                  |
-| 📱 Device      | Device fingerprint                  |
-| 🌐 IP Address  | Network identity                    |
-| 🏦 Merchant    | Transaction destination             |
-| 💸 Transaction | Financial activity                  |
-| 🧑 Customer    | Identity associated with an account |
-
-### Example Relationships
-
-```text
-Account ──USES──▶ Device
-
-Account ──OWNS──▶ Card
-
-Account ──PERFORMED──▶ Transaction
-
-Transaction ──PAID_TO──▶ Merchant
-
-Account ──CONNECTED_TO──▶ IP
-
-Account ──TRANSFERRED_TO──▶ Account
-```
-
----
-
-# 🚩 Fraud Patterns
-
-FraudGraph-Agent is designed around relational fraud patterns such as:
-
-### 🔗 Shared Identity Infrastructure
-
-```text
-Account A ──┐
-Account B ──┼──▶ Device X
-Account C ──┘
-```
-
-Multiple accounts using the same device can become an investigation signal.
-
-### 🕸️ Fraud Ring
-
-```text
-A ───▶ B
-▲     │
-│     ▼
-D ◀── C
-```
-
-Dense or unusual transaction relationships may indicate coordinated activity.
-
-### 🔄 Mule Account Chain
-
-```text
-Source
-   │
-   ▼
-Account A
-   │
-   ▼
-Account B
-   │
-   ▼
-Account C
-   │
-   ▼
-Destination
-```
-
-### ⚡ Transaction Burst
-
-```text
-Transaction Frequency
-
-        ▲
-        │             █
-        │             █
-        │         █   █
-        │     █   █   █
-        │ █   █   █   █
-        └──────────────────▶ Time
-```
-
-Sudden changes in transaction behavior can be investigated as potential anomalies.
+> The official benchmark answer key is hidden; therefore model predictions should not be presented as official benchmark accuracy.
 
 ---
 
 # 🏗️ System Architecture
 
 ```text
-                         ┌────────────────────┐
-                         │   Analyst / User   │
-                         └─────────┬──────────┘
-                                   │
+                         ┌─────────────────────┐
+                         │      Dashboard      │
+                         │   Investigation UI  │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │      FastAPI        │
+                         │       REST API      │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │      LangGraph      │
+                         │    Agent Workflow   │
+                         └──────────┬──────────┘
+                                    │
+             ┌──────────────────────┼────────────────────────┐
+             │                      │                        │
+             ▼                      ▼                        ▼
+      ┌────────────┐        ┌─────────────┐          ┌─────────────┐
+      │  LightGBM  │        │ TigerGraph  │          │   GraphRAG  │
+      │ Fraud ML   │        │ + MCP       │          │ + Memory    │
+      └──────┬─────┘        └──────┬──────┘          └──────┬──────┘
+             │                     │                        │
+             └─────────────────────┼────────────────────────┘
                                    ▼
-                         ┌────────────────────┐
-                         │   Web Dashboard    │
-                         └─────────┬──────────┘
-                                   │
-                                   ▼
-                         ┌────────────────────┐
-                         │    FastAPI API     │
-                         └─────────┬──────────┘
-                                   │
-                                   ▼
-                    ┌────────────────────────────┐
-                    │    Agent Orchestrator      │
-                    └─────────────┬──────────────┘
-                                  │
-              ┌───────────────────┼───────────────────┐
-              │                   │                   │
-              ▼                   ▼                   ▼
-      ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-      │ Risk Agent   │    │ Graph Agent  │    │ RAG Agent    │
-      └──────┬───────┘    └──────┬───────┘    └──────┬───────┘
-             │                   │                   │
-             └───────────────────┼───────────────────┘
-                                 ▼
-                       ┌───────────────────┐
-                       │ Hybrid Retrieval  │
-                       └─────────┬─────────┘
-                                 │
-                    ┌────────────┴────────────┐
-                    ▼                         ▼
-             ┌─────────────┐          ┌─────────────┐
-             │ Graph Store │          │ Vector Store│
-             └─────────────┘          └─────────────┘
-                    │                         │
-                    └────────────┬────────────┘
-                                 ▼
-                       ┌───────────────────┐
-                       │ AI Reasoning / LLM│
-                       └─────────┬─────────┘
-                                 │
-                                 ▼
-                       ┌───────────────────┐
-                       │ Investigation     │
-                       │ Report            │
-                       └───────────────────┘
+                         ┌─────────────────────┐
+                         │ Evidence + Risk +   │
+                         │ Uncertainty Engine  │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │    Policy Engine    │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │   NBA Engine        │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │ Approval / Action   │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │ Explanation +       │
+                         │ Case Memory         │
+                         └─────────────────────┘
 ```
 
 ---
 
-# 🎯 Why Graph + AI?
-
-Traditional fraud detection often focuses on individual records.
-
-FraudGraph-Agent focuses on **relationships**.
-
-Consider:
-
-```text
-Transaction A
-Amount: ₹9,500
-Status: Normal
-```
-
-Individually, it may not look suspicious.
-
-But graph analysis may reveal:
-
-```text
-Transaction A
-      │
-      ▼
-Account X
-  │       │
-  │       └──── Shared Device ──── Account Y
-  │                                  │
-  └──────── Previous Fraud Flag ◀────┘
-                                      │
-                                      ▼
-                              Multiple Accounts
-```
-
-The surrounding network changes the context.
-
-That is the core idea behind FraudGraph-Agent:
-
-> **Fraud intelligence should understand relationships, not just rows.**
-
----
-
-# 🖥️ Intelligent Analyst Dashboard
-
-The frontend is designed around an investigation-first workflow.
-
-### Dashboard
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│ FRAUDGRAPH                                  Analyst Console │
-├─────────────┬───────────────────────────────────────────────┤
-│             │                                               │
-│ Dashboard   │     Risk Overview                             │
-│             │                                               │
-│ Cases       │   ┌────────┐ ┌────────┐ ┌────────┐           │
-│             │   │ HIGH   │ │ MEDIUM │ │ LOW    │           │
-│ Graph       │   │   24   │ │   61   │ │  142   │           │
-│             │   └────────┘ └────────┘ └────────┘           │
-│ Agents      │                                               │
-│             │       Fraud Network Visualization             │
-│ Reports     │                                               │
-│             │             ●──────●                           │
-│ Settings    │           ╱   ╲    │                           │
-│             │         ●───────●──●                           │
-│             │                                               │
-└─────────────┴───────────────────────────────────────────────┘
-```
-
-The interface is intended to help analysts move from:
-
-**Alert → Graph → Evidence → Reasoning → Report**
-
-without switching between disconnected tools.
-
----
-
-# ⚙️ Technology Stack
-
-| Layer         | Technology                       |
-| ------------- | -------------------------------- |
-| Frontend      | React / Modern Web UI            |
-| Backend       | FastAPI                          |
-| Language      | Python                           |
-| AI            | Agentic AI / LLM                 |
-| Retrieval     | GraphRAG / Hybrid Retrieval      |
-| Graph         | Neo4j / Graph-based analysis     |
-| Database      | SQL / Structured storage         |
-| ML            | Fraud & anomaly detection models |
-| API           | REST / WebSocket where required  |
-| Visualization | Interactive graph visualization  |
-| Deployment    | Docker-ready architecture        |
-
----
-
-# 📂 Project Structure
+# 🗂️ Project Structure
 
 ```text
 FraudGraph-Agent/
 │
 ├── backend/
+│   ├── agent/
+│   │   ├── agent.py
+│   │   ├── state.py
+│   │   ├── workflow.py
+│   │   ├── nodes/
+│   │   └── tools/
 │   │
-│   ├── api/
-│   ├── agents/
-│   ├── graph/
+│   ├── fraud/
+│   ├── ml/
+│   ├── risk/
+│   ├── nba/
+│   ├── evidence/
+│   ├── cases/
+│   ├── memory/
 │   ├── graphrag/
-│   ├── models/
-│   ├── services/
-│   ├── database/
-│   └── core/
+│   ├── tigergraph/
+│   ├── policy/
+│   ├── actions/
+│   ├── sar/
+│   └── app/
 │
 ├── frontend/
-│   │
-│   ├── components/
-│   ├── pages/
-│   ├── dashboard/
-│   ├── graph/
-│   ├── cases/
-│   └── services/
 │
 ├── data/
+│   └── raw/
 │
-├── docs/
-│
-├── tests/
+├── models/
+│   └── fraud_model.joblib
 │
 ├── scripts/
 │
+├── tests/
+│
 ├── .env.example
-├── docker-compose.yml
-├── requirements.txt
+├── pyproject.toml
 └── README.md
 ```
 
-> The exact structure may evolve as the platform continues to develop.
+---
+
+# ⚙️ Technology Stack
+
+| Layer               | Technology                 |
+| ------------------- | -------------------------- |
+| Backend             | Python                     |
+| API                 | FastAPI                    |
+| Agent Orchestration | LangGraph                  |
+| LLM                 | Ollama / Llama 3.1 8B      |
+| Fraud ML            | LightGBM                   |
+| Graph Database      | TigerGraph                 |
+| Agent ↔ Graph       | TigerGraph MCP             |
+| Graph Intelligence  | GraphRAG                   |
+| Memory              | Vector + Keyword Retrieval |
+| Frontend            | React / TypeScript         |
+| Dataset             | HHGOA / IEEE Fraud Dataset |
 
 ---
 
-# 🚀 Getting Started
+# 🤖 LLM Layer
 
-## 1. Clone the repository
+The reasoning layer uses:
 
-```bash
-git clone https://github.com/Abir-Ghosh-sudo/FraudGraph-Agent.git
+```text
+Provider: Ollama
+Model: Llama 3.1 8B
+```
 
-cd FraudGraph-Agent
+Example configuration:
+
+```env
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.1:8b
+```
+
+The LLM is responsible for:
+
+* Agent reasoning
+* Investigation interpretation
+* Evidence synthesis
+* Explanation generation
+* Action rationale
+
+It is **not the primary fraud classifier**.
+
+The fraud classifier is **LightGBM**.
+
+---
+
+# 🧪 Example Investigation
+
+Suppose the system receives:
+
+```text
+Transaction: 3514030
+Customer: C12382
+Bank Risk Score: 0.61
+```
+
+The agent can investigate:
+
+```text
+Transaction
+    ↓
+ML Fraud Probability
+    ↓
+Customer History
+    ↓
+Card Relationships
+    ↓
+Device Relationships
+    ↓
+IP / Connection Relationships
+    ↓
+Historical Cases
+    ↓
+Fraud Pattern Detection
+    ↓
+Risk Assessment
+    ↓
+Uncertainty Assessment
+    ↓
+Additional Evidence
+    ↓
+Next Best Action
+    ↓
+Approval
+    ↓
+Action
+    ↓
+Explanation
+    ↓
+Case Memory
 ```
 
 ---
 
-## 2. Create a virtual environment
+# 📋 Explainability
+
+Every recommendation should be understandable to a human analyst.
+
+Example:
+
+```text
+Risk Level:
+HIGH
+
+Fraud Probability:
+0.87
+
+Detected Pattern:
+Card-not-present + new device
+
+Key Evidence:
+• Elevated ML fraud probability
+• New device association
+• Related suspicious activity
+• Connected entity evidence
+• Similar historical cases
+
+Uncertainty:
+Medium
+
+Recommended Action:
+STEP_UP_AUTH
+
+Reason:
+The available evidence indicates elevated risk,
+while customer verification can materially reduce
+uncertainty before stronger action is taken.
+
+Approval:
+Required
+```
+
+---
+
+# 🚀 Setup
+
+## 1. Clone the Repository
+
+```bash
+git clone https://github.com/Abir-Ghosh-sudo/FraudGraph-Agent.git
+cd FraudGraph-Agent
+```
+
+## 2. Create Virtual Environment
+
+```bash
+python -m venv .venv
+```
 
 ### Windows
 
 ```powershell
-python -m venv .venv
-
 .\.venv\Scripts\Activate.ps1
 ```
 
-### Linux / macOS
+## 3. Install Dependencies
 
 ```bash
-python3 -m venv .venv
-
-source .venv/bin/activate
+pip install -e .
 ```
 
----
-
-## 3. Install dependencies
+## 4. Install Ollama Model
 
 ```bash
-pip install -r requirements.txt
+ollama pull llama3.1:8b
 ```
 
-If the project uses a frontend:
+## 5. Start Backend
 
 ```bash
-cd frontend
-
-npm install
+uvicorn backend.app.main:app --reload
 ```
 
----
-
-## 4. Configure environment variables
-
-Create:
-
-```text
-.env
-```
-
-from:
-
-```text
-.env.example
-```
-
-Configure the required database, graph, AI, and application settings.
-
----
-
-# ▶️ Running the Application
-
-### Backend
-
-```bash
-uvicorn backend.main:app --reload
-```
-
-The API will be available at:
-
-```text
-http://localhost:8000
-```
-
-API documentation:
-
-```text
-http://localhost:8000/docs
-```
-
----
-
-### Frontend
+## 6. Start Frontend
 
 ```bash
 cd frontend
-
 npm run dev
 ```
 
-The frontend will typically be available at:
+## 7. Run Tests
 
-```text
-http://localhost:3000
+```bash
+pytest
 ```
 
 ---
 
-# 🔎 Example Investigation
+# 🌐 Environment Configuration
 
-### Question
+Create a `.env` file based on `.env.example`.
 
-```text
-Why is account ACC-10492 considered high risk?
+```env
+APP_ENV=development
+
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.1:8b
+
+TIGERGRAPH_HOST=<YOUR_HOST>
+TIGERGRAPH_USERNAME=<YOUR_USERNAME>
+TIGERGRAPH_API_TOKEN=<YOUR_TOKEN>
+TIGERGRAPH_GRAPH_NAME=Transaction_Fraud
+TIGERGRAPH_MCP_ENABLED=true
+
+AGENT_MAX_STEPS=20
+AGENT_REQUIRE_APPROVAL=true
 ```
 
-### Agent Pipeline
+> ⚠️ **Never commit real credentials, passwords, API tokens, or secrets.**
+
+---
+
+# 📈 Investigation Philosophy
+
+FraudGraph-Agent is built around several principles.
+
+### 🔍 Evidence Before Action
+
+Investigate before taking high-impact action.
+
+### 📊 ML Is Probabilistic
+
+A fraud score is evidence, not absolute truth.
+
+### 🌐 Fraud Is Relational
+
+Graph relationships can reveal patterns invisible at transaction level.
+
+### 👤 Human Control
+
+Sensitive actions remain subject to approval.
+
+### 📋 Explainability
+
+Every recommendation should have an evidence-backed rationale.
+
+### 🧠 Memory
+
+Previous investigations should improve future investigations.
+
+### ⚙️ Controlled Autonomy
+
+The agent can investigate autonomously while remaining bounded by policies and permissions.
+
+---
+
+# 🏆 Why FraudGraph-Agent?
+
+## Traditional Fraud Detection
 
 ```text
-User Query
-    │
-    ▼
-Query Understanding
-    │
-    ▼
-Account Lookup
-    │
-    ▼
-Risk Analysis
-    │
-    ▼
-Graph Expansion
-    │
-    ├── Connected Accounts
-    ├── Shared Devices
-    ├── Transactions
-    ├── IP Addresses
-    └── Merchants
-    │
-    ▼
-Evidence Retrieval
-    │
-    ▼
-Agent Reasoning
-    │
-    ▼
-Investigation Report
+Transaction
+     ↓
+Fraud Score
+     ↓
+Alert
 ```
 
-### Example Result
+## FraudGraph-Agent
 
 ```text
-Risk Level: HIGH
-
-Primary Signals
-
-1. Shared device detected across multiple accounts.
-2. Unusual transaction velocity observed.
-3. Multiple connected entities have historical risk indicators.
-4. Graph structure contains a suspicious high-density cluster.
-5. Recent activity differs significantly from historical behavior.
-
-Conclusion
-
-The account requires further investigation based on the
-combination of transactional, behavioral, and relational signals.
+Transaction
+     ↓
+ML Prediction
+     +
+Graph Investigation
+     +
+Historical Cases
+     +
+Fraud Patterns
+     +
+Policy
+     +
+Uncertainty
+     ↓
+Agentic Investigation
+     ↓
+Next Best Action
+     ↓
+Human Approval
+     ↓
+Action
+     ↓
+Explanation
+     ↓
+Case Memory
 ```
+
+The core transformation is:
+
+> **From fraud detection → to evidence-driven agentic fraud investigation.**
 
 ---
 
-# 📊 Explainability First
+# 🏁 Hackathon Demo Flow
 
-A key design principle of FraudGraph-Agent is:
-
-> **Every important risk signal should be explainable.**
-
-The system aims to expose:
+A complete demonstration can follow:
 
 ```text
-Risk Score
-    │
-    ├── Transaction Signals
-    │
-    ├── Behavioral Signals
-    │
-    ├── Graph Signals
-    │
-    ├── Historical Signals
-    │
-    └── Retrieved Evidence
+1. Trigger suspicious transaction
+        ↓
+2. Agent starts investigation
+        ↓
+3. Graph relationships appear
+        ↓
+4. ML fraud probability is calculated
+        ↓
+5. Historical evidence is retrieved
+        ↓
+6. Fraud patterns are detected
+        ↓
+7. Risk + uncertainty are assessed
+        ↓
+8. Next Best Action is generated
+        ↓
+9. Human approval is requested
+        ↓
+10. Action is executed / simulated
+        ↓
+11. Agent explains the decision
+        ↓
+12. Case memory is updated
 ```
-
-This makes the platform suitable for human-in-the-loop investigation workflows.
 
 ---
 
-# 🛡️ Human-in-the-Loop
+# 🔒 Security
 
-FraudGraph-Agent is designed to **assist investigators**, not blindly replace them.
+FraudGraph-Agent follows a **fail-closed approach** for sensitive operations.
+
+Security considerations include:
+
+* API authentication
+* Server-side approval verification
+* Action validation
+* Approval binding
+* Unknown-action rejection
+* Human approval
+* Policy constraints
+* Credential protection
+
+For shared or production deployments:
+
+```env
+AUTH_ENABLED=true
+```
+
+should be enabled.
+
+---
+
+# 🔗 Architecture Summary
 
 ```text
-                 AI Investigation
-                       │
-                       ▼
-                Evidence + Reasoning
-                       │
-                       ▼
-                Human Analyst
-                       │
-            ┌──────────┼──────────┐
-            ▼          ▼          ▼
-         Confirm     Review     Escalate
+┌─────────────────────────────────────────────────────────┐
+│                    FraudGraph-Agent                     │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  React / TypeScript Investigation Dashboard             │
+│                       │                                 │
+│                       ▼                                 │
+│                  FastAPI REST API                       │
+│                       │                                 │
+│                       ▼                                 │
+│                  LangGraph Agent                       │
+│                       │                                 │
+│        ┌──────────────┼──────────────┐                  │
+│        ▼              ▼              ▼                  │
+│    LightGBM       TigerGraph      GraphRAG              │
+│   Fraud Model        + MCP        + Memory              │
+│        │              │              │                  │
+│        └──────────────┼──────────────┘                  │
+│                       ▼                                 │
+│             Evidence + Risk +                           │
+│                Uncertainty                              │
+│                       │                                 │
+│                       ▼                                 │
+│                 Policy Engine                           │
+│                       │                                 │
+│                       ▼                                 │
+│                Next Best Action                         │
+│                       │                                 │
+│              ┌────────┴────────┐                        │
+│              ▼                 ▼                        │
+│       Human Approval      Allowed Action                │
+│              │                 │                        │
+│              └────────┬────────┘                        │
+│                       ▼                                 │
+│             Explanation + Memory                        │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
 ```
 
-This approach keeps the final investigation decision with the responsible analyst.
+---
+
+# 📚 References
+
+* **TigerGraph MCP:** https://github.com/tigergraph/tigergraph-mcp
+* **TigerGraph:** https://www.tigergraph.com/
+* **LangGraph:** https://github.com/langchain-ai/langgraph
+* **LightGBM:** https://github.com/microsoft/LightGBM
+* **Ollama:** https://ollama.com/
 
 ---
 
-# ⚡ Design Principles
+# 👨‍💻 FraudGraph-Agent
 
-### 01 — Relationship First
+### AI × Graph Intelligence × Agentic Reasoning × Fraud Analytics
 
-Fraud is often a network problem.
-
-### 02 — Explainability
-
-Risk signals should be understandable.
-
-### 03 — Specialized Agents
-
-Complex investigations are decomposed into focused tasks.
-
-### 04 — Evidence Grounding
-
-AI responses should be supported by retrieved information.
-
-### 05 — Human Oversight
-
-Critical decisions remain reviewable by human investigators.
-
-### 06 — Modular Architecture
-
-Components can evolve independently.
-
----
-
-# 🔮 Future Roadmap
-
-* [ ] Real-time transaction streaming
-* [ ] Advanced Graph Neural Networks
-* [ ] Automated fraud-ring discovery
-* [ ] Real-time graph updates
-* [ ] Advanced GraphRAG reasoning
-* [ ] Investigator feedback loop
-* [ ] Case management system
-* [ ] Evidence timeline visualization
-* [ ] Automated regulatory report generation
-* [ ] Multi-model agent orchestration
-* [ ] Model monitoring and drift detection
-* [ ] Production-grade observability
-* [ ] Role-based access control
-* [ ] Audit logging
-* [ ] Scalable distributed deployment
-
----
-
-# 🧪 Research & Engineering Direction
-
-FraudGraph-Agent explores the intersection of:
-
-```text
-Artificial Intelligence
-        +
-Machine Learning
-        +
-Graph Intelligence
-        +
-Retrieval-Augmented Generation
-        +
-Agentic Systems
-        +
-Financial Crime Investigation
-```
-
-The central research direction is:
-
-> **How can intelligent agents combine graph relationships and contextual evidence to make fraud investigation faster, more explainable, and more actionable?**
-
----
-
-# 🌐 Use Cases
-
-FraudGraph-Agent can support investigation workflows involving:
-
-* 💳 Payment fraud
-* 🏦 Banking fraud
-* 🪪 Identity-related fraud
-* 🕸️ Fraud-ring discovery
-* 💸 Suspicious transaction analysis
-* 📱 Device-network investigation
-* 🌐 IP/network relationship analysis
-* 🔍 AML investigation support
-* 📊 Financial risk analysis
-* 🧑‍💼 Analyst decision support
-
----
-
-# 🏆 Project Vision
-
-Most fraud systems answer:
-
-> **"Is this transaction suspicious?"**
-
-FraudGraph-Agent aims to answer a much more useful question:
-
-> **"Why is this activity suspicious, what is it connected to, what evidence supports the finding, and what should the investigator examine next?"**
-
-By combining **graph intelligence with agentic reasoning**, FraudGraph-Agent turns isolated financial events into an interconnected investigation landscape.
-
----
-
-# 👨‍💻 Author
-
-### **Abir Ghosh**
-
-B.Tech — Information Technology
-
-Built with a focus on:
-
-**AI • Machine Learning • Graph Intelligence • Agentic Systems • Full-Stack Engineering**
-
----
-
-# ⭐ Support the Project
-
-If you find this project interesting, consider giving the repository a ⭐ on GitHub.
-
-Your support helps the project grow and encourages further development.
-
----
-
-# 📜 License
-
-This project is licensed under the **MIT License**.
-
-See the `LICENSE` file for details.
+> **Don't just detect fraud. Investigate it. Understand it. Explain it. Act on it.**
 
 ---
 
 <p align="center">
+  <strong>FraudGraph-Agent</strong>
+</p>
 
-### 🕸️ FraudGraph-Agent
-
-**See the transaction.
-Understand the network.
-Find the pattern.
-Investigate the fraud.**
-
+<p align="center">
+  Built for intelligent, explainable, graph-aware fraud investigation.
 </p>
