@@ -64,12 +64,8 @@ FraudGraph-Agent provides a visual investigation dashboard for monitoring:
 * Investigation history
 
 ### 📸 Dashboard Preview
+![Uploading image.png…]()
 
-![FraudGraph-Agent Dashboard](docs/images/dashboard.png)
-
-> Replace `docs/images/dashboard.png` with the actual dashboard screenshot.
-
----
 
 # 🎯 The Problem
 
