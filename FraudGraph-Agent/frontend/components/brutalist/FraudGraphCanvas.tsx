@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { graphApi, healthApi } from "@/lib/api";
 
 export interface GraphNode {
@@ -131,29 +131,90 @@ const BENCHMARK_EDGES: GraphEdge[] = [
 ];
 
 // Helper to compute node positions radial to center
+/**
+ * Deterministic graph layout.
+ *
+ * The previous version put every non-root node on a single circle at one
+ * radius. With a two-hop subgraph (~100 nodes) that collapsed into an
+ * unreadable ring of overlapping cards.
+ *
+ * This version places the root at the centre and groups the rest by node
+ * type, giving each type its own concentric ring. Nodes are distributed
+ * evenly around their own ring, so density stays legible and the shape still
+ * reflects the real topology rather than arbitrary placement.
+ */
 function layoutNodes(rawNodes: GraphNode[], width = 720, height = 420): GraphNode[] {
   if (rawNodes.length === 0) return [];
   const centerX = width / 2;
   const centerY = height / 2;
 
   // If already has x, y within bounds, keep them
-  const hasCoordinates = rawNodes.every((n) => typeof n.x === "number" && typeof n.y === "number");
+  const hasCoordinates = rawNodes.every(
+    (n) => typeof n.x === "number" && typeof n.y === "number",
+  );
   if (hasCoordinates) return rawNodes;
 
   if (rawNodes.length === 1) {
     return [{ ...rawNodes[0], x: centerX, y: centerY }];
   }
 
-  const radius = Math.min(centerX, centerY) - 70;
-  return rawNodes.map((node, i) => {
-    if (i === 0) {
-      return { ...node, x: centerX, y: centerY };
-    }
-    const angle = ((i - 1) / (rawNodes.length - 1)) * 2 * Math.PI - Math.PI / 2;
-    const x = Math.round(centerX + radius * Math.cos(angle));
-    const y = Math.round(centerY + radius * Math.sin(angle));
-    return { ...node, x, y };
+  const [root, ...rest] = rawNodes;
+
+  // Ring order: entities first, then attribute-ish vertices outward.
+  const TYPE_ORDER = [
+    "Customer",
+    "Card",
+    "ClosedCase",
+    "DeviceProfile",
+    "EmailDomain",
+    "BillingRegion",
+    "Transaction",
+  ];
+  const rank = (t: string) => {
+    const i = TYPE_ORDER.findIndex(
+      (name) => t.toLowerCase().startsWith(name.toLowerCase()),
+    );
+    return i === -1 ? TYPE_ORDER.length : i;
+  };
+
+  const groups = new Map<string, GraphNode[]>();
+  for (const node of rest) {
+    const list = groups.get(node.type) ?? [];
+    list.push(node);
+    groups.set(node.type, list);
+  }
+
+  const ordered = Array.from(groups.entries()).sort(
+    (a, b) => rank(a[0]) - rank(b[0]),
+  );
+
+  const maxRadius = Math.min(centerX, centerY) - 58;
+  const ringCount = Math.max(ordered.length, 1);
+  const positioned: GraphNode[] = [
+    { ...root, x: Math.round(centerX), y: Math.round(centerY) },
+  ];
+
+  ordered.forEach(([type, members], ringIndex) => {
+    // Spread rings across the available radius.
+    const radius =
+      ordered.length === 1
+        ? maxRadius
+        : Math.round(
+            maxRadius * ((ringIndex + 1) / ordered.length) * 0.95 +
+              maxRadius * 0.05,
+          );
+
+    members.forEach((node, i) => {
+      const angle = (i / members.length) * 2 * Math.PI - Math.PI / 2;
+      positioned.push({
+        ...node,
+        x: Math.round(centerX + radius * Math.cos(angle)),
+        y: Math.round(centerY + radius * Math.sin(angle)),
+      });
+    });
   });
+
+  return positioned;
 }
 
 interface FraudGraphCanvasProps {
@@ -164,7 +225,7 @@ interface FraudGraphCanvasProps {
 
 export function FraudGraphCanvas({
   onAction = () => {},
-  initialTarget = "3000003",
+  initialTarget = "C11919",
   initialTargetType = "customer",
 }: FraudGraphCanvasProps) {
   // Target Search Controls
@@ -261,6 +322,9 @@ export function FraudGraphCanvas({
           transaction_id: targetType === "transaction" ? queryTarget : undefined,
           account_id: targetType === "account" ? queryTarget : undefined,
           depth: 2,
+          // 100 nodes could not be laid out legibly; 40 keeps a two-hop
+          // subgraph readable while still showing real structure.
+          limit: 40,
         });
 
         const elapsed = Math.round(performance.now() - startTime);
@@ -399,12 +463,28 @@ export function FraudGraphCanvas({
     [targetInput, targetType, onAction]
   );
 
+  // Run the initial scan once the backend probe has settled, so the canvas
+  // opens on real data rather than an empty panel. This loads whatever the
+  // graph backend actually returns; no data is synthesised locally.
+  const autoScanned = useRef(false);
+  useEffect(() => {
+    if (autoScanned.current) return;
+    if (isBackendOffline) return;
+    if (!initialTarget.trim()) return;
+    autoScanned.current = true;
+    void handleRunScan(initialTarget);
+  }, [handleRunScan, isBackendOffline, initialTarget]);
+
   // Quick Preset entity ids for the search box. These are id strings only:
   // no risk score or amount is asserted here, because those values are only
   // known once a real graph scan returns them.
+  // Real ids taken from data/raw/transactions.csv. C11919 is the customer
+  // behind transactions 3000003 and 3000004, the two highest-risk rows the
+  // model scores, so a scan surfaces genuine findings.
   const samplePresets = [
+    { label: "C11919", type: "customer" as const, desc: "Customer id" },
+    { label: "C06075", type: "customer" as const, desc: "Customer id" },
     { label: "3000003", type: "transaction" as const, desc: "Transaction id" },
-    { label: "3000004", type: "transaction" as const, desc: "Transaction id" },
     { label: "C:22374", type: "card" as const, desc: "Card id" },
   ];
 
@@ -453,6 +533,21 @@ export function FraudGraphCanvas({
       return hasFrom && hasTo;
     });
   }, [edges, filteredNodes, showCyclesOnly]);
+
+  // Node glyphs are fixed-size in the SVG user space (viewBox 720x420), so a
+  // dense subgraph physically cannot fit and the cards overlap into an
+  // unreadable mass. Scale the glyph with the node count and drop the text
+  // labels once there is no room for them; the details are still in the
+  // inspection panel.
+  const { nodeSize, showNodeLabels, labelScale } = useMemo(() => {
+    const count = filteredNodes.length;
+    const size = count <= 12 ? 48 : count <= 24 ? 36 : count <= 40 ? 28 : 22;
+    return {
+      nodeSize: size,
+      showNodeLabels: count <= 24,
+      labelScale: size / 48,
+    };
+  }, [filteredNodes.length]);
 
   // Color mapping based on node type
   const getNodeColor = (type: string) => {
@@ -799,7 +894,10 @@ export function FraudGraphCanvas({
                       strokeDasharray={edge.isCycle ? "6,4" : "none"}
                       markerEnd={edge.isCycle ? "url(#fg-arrow-cycle)" : "url(#fg-arrow)"}
                     />
-                    {/* Amount / Label pill */}
+                    {/* Amount / Label pill - suppressed on dense graphs, where
+                        dozens of overlapping pills are unreadable. */}
+                    {showNodeLabels ? (
+                      <>
                     <rect
                       x={midX - 30}
                       y={midY - 10}
@@ -821,6 +919,8 @@ export function FraudGraphCanvas({
                     >
                       {edge.amount || edge.type || "LINK"}
                     </text>
+                      </>
+                    ) : null}
                   </g>
                 );
               })}
@@ -843,13 +943,21 @@ export function FraudGraphCanvas({
                     className="cursor-pointer transition-transform hover:scale-105"
                   >
                     {/* Offset Brutalist Shadow */}
-                    <rect x="-24" y="-24" width="48" height="48" fill="#050505" transform="translate(4, 4)" rx="3" />
+                    <rect
+                      x={-nodeSize / 2}
+                      y={-nodeSize / 2}
+                      width={nodeSize}
+                      height={nodeSize}
+                      fill="#050505"
+                      transform="translate(4, 4)"
+                      rx="3"
+                    />
                     {/* Primary Node Shape */}
                     <rect
-                      x="-24"
-                      y="-24"
-                      width="48"
-                      height="48"
+                      x={-nodeSize / 2}
+                      y={-nodeSize / 2}
+                      width={nodeSize}
+                      height={nodeSize}
                       fill={nodeColor}
                       stroke="#050505"
                       strokeWidth={isSelected ? 4 : 2.5}
@@ -858,40 +966,48 @@ export function FraudGraphCanvas({
                     {/* Score / Type inside */}
                     <text
                       x="0"
-                      y="4"
+                      y={4 * labelScale}
                       textAnchor="middle"
                       fontFamily="Anton"
-                      fontSize="13"
+                      fontSize={13 * labelScale}
                       fill={node.type === "mule" ? "#ffffff" : "#050505"}
                     >
                       {node.riskScore ?? "—"}
                     </text>
 
-                    {/* Node Label Below */}
-                    <g transform="translate(0, 36)">
-                      <rect
-                        x="-70"
-                        y="-10"
-                        width="140"
-                        height="20"
-                        fill={isSelected ? "#050505" : "#ffffff"}
-                        stroke="#050505"
-                        strokeWidth="2"
-                        rx="2"
-                        filter="drop-shadow(2px 2px 0 #050505)"
-                      />
-                      <text
-                        x="0"
-                        y="4"
-                        textAnchor="middle"
-                        fontFamily="Inter"
-                        fontSize="9.5"
-                        fontWeight="800"
-                        fill={isSelected ? "#ffffff" : "#050505"}
+                    {/* Node Label Below - hidden when the graph is too dense
+                        for labels to be readable; the inspection panel
+                        carries the detail. */}
+                    {showNodeLabels ? (
+                      <g
+                        transform={`translate(0, ${nodeSize / 2 + 12}) scale(${labelScale})`}
                       >
-                        {node.label.length > 20 ? `${node.label.slice(0, 18)}...` : node.label}
-                      </text>
-                    </g>
+                        <rect
+                          x="-70"
+                          y="-10"
+                          width="140"
+                          height="20"
+                          fill={isSelected ? "#050505" : "#ffffff"}
+                          stroke="#050505"
+                          strokeWidth="2"
+                          rx="2"
+                          filter="drop-shadow(2px 2px 0 #050505)"
+                        />
+                        <text
+                          x="0"
+                          y="4"
+                          textAnchor="middle"
+                          fontFamily="Inter"
+                          fontSize="9.5"
+                          fontWeight="800"
+                          fill={isSelected ? "#ffffff" : "#050505"}
+                        >
+                          {node.label.length > 20
+                            ? `${node.label.slice(0, 18)}...`
+                            : node.label}
+                        </text>
+                      </g>
+                    ) : null}
                   </g>
                 );
               })}

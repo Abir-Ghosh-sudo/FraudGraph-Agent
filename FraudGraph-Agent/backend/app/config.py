@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     tigergraph_password: str = ""
     tigergraph_graph_name: str = ""
     tigergraph_api_token: str = ""
+    tigergraph_secret: str = ""
+    tigergraph_gsql_port: int = 14240
+    tigergraph_restpp_port: int = 9000
     tigergraph_timeout_seconds: float = Field(default=30.0, gt=0)
 
     tigergraph_mcp_enabled: bool = False

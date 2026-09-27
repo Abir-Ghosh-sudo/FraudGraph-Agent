@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { actionsApi, graphApi, casesApi } from "@/lib/api";
+import { actionsApi, graphApi, casesApi, investigationsApi } from "@/lib/api";
 
 interface ProtocolModalProps {
   isOpen: boolean;
@@ -48,6 +48,57 @@ export function ProtocolModal({
    */
   const [selectedActionId, setSelectedActionId] = useState<string>("");
 
+  // Real investigation output. Every field below is populated from the
+  // backend response; nothing here is pre-seeded.
+  const [scanInvestigationId, setScanInvestigationId] = useState<string | null>(
+    null,
+  );
+  const [scanEvidenceIds, setScanEvidenceIds] = useState<string[]>([]);
+  const [scanFindings, setScanFindings] = useState<unknown[]>([]);
+  const [scanRecommendations, setScanRecommendations] = useState<unknown[]>(
+    [],
+  );
+  const [scanGraphNodeCount, setScanGraphNodeCount] = useState<number | null>(
+    null,
+  );
+  const [scanGraphEdgeCount, setScanGraphEdgeCount] = useState<number | null>(
+    null,
+  );
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanRequiresEvidence, setScanRequiresEvidence] = useState(false);
+  const [scanRequiredEvidence, setScanRequiredEvidence] = useState<string[]>(
+    [],
+  );
+
+  // The agent returns findings either as plain strings or as objects,
+  // depending on the node that produced them. Normalise both to text so the
+  // console shows what was actually returned.
+  const findingText = (f: unknown): string => {
+    if (typeof f === "string") return f;
+    if (f && typeof f === "object") {
+      const rec = f as Record<string, unknown>;
+      const title = rec.title ?? rec.finding_type ?? rec.type;
+      const desc = rec.description ?? rec.detail;
+      if (typeof title === "string" && typeof desc === "string") {
+        return `${title}: ${desc}`;
+      }
+      if (typeof desc === "string") return desc;
+      if (typeof title === "string") return title;
+    }
+    return String(f);
+  };
+
+  const recommendationText = (r: unknown): string => {
+    if (typeof r === "string") return r;
+    if (r && typeof r === "object") {
+      const rec = r as Record<string, unknown>;
+      const label =
+        rec.action_type ?? rec.recommendation ?? rec.title ?? rec.type;
+      return typeof label === "string" ? label : JSON.stringify(rec);
+    }
+    return String(r);
+  };
+
   // State flags
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [hasScanned, setHasScanned] = useState(false);
@@ -84,33 +135,111 @@ export function ProtocolModal({
   if (!isOpen) return null;
 
   // Execute Autonomous Graph Scan
+  //
+  // This runs a real investigation on the backend. The previous version
+  // advanced the stage indicators on timers, discarded whatever the graph
+  // returned, and then reported a hardcoded "89% Risk" regardless of outcome.
   const handleRunAgentScan = async () => {
+    const target = targetAccount.trim();
+    if (!target) {
+      onSuccessToast?.("Enter a target identifier before running a scan.");
+      return;
+    }
+
     setIsEvaluating(true);
+    setHasScanned(false);
+    setScanError(null);
     setCurrentStageIndex(1); // INVESTIGATE
+    setActionResult(null);
+    setSelectedActionId("");
 
     try {
-      // Advance stages realistically as evidence is collected
-      setTimeout(() => setCurrentStageIndex(2), 300); // GATHER EVIDENCE
-      setTimeout(() => setCurrentStageIndex(3), 600); // DETECT PATTERNS
-      setTimeout(() => setCurrentStageIndex(4), 900); // ASSESS RISK
-      setTimeout(() => setCurrentStageIndex(5), 1100); // ASSESS UNCERTAINTY
-
-      // Query graph or cases API
-      await graphApi.get({
-        node_id: targetAccount,
-        customer_id: targetType === "customer" ? targetAccount : undefined,
-        transaction_id: targetType === "transaction" ? targetAccount : undefined,
+      const created = await investigationsApi.create<
+        { investigation_id: string }
+      >({
+        trigger: {
+          trigger_type:
+            targetType === "transaction" ? "fraud_signal" : "manual",
+          ...(targetType === "transaction"
+            ? { transaction_id: target }
+            : { customer_id: target }),
+          reason: `Console scan for ${target}`,
+        },
       });
-    } catch {
-      // Live query completed (or offline fallback processed)
+
+      const investigationId = created?.investigation_id;
+      if (!investigationId) {
+        throw new Error("The backend did not return an investigation id.");
+      }
+
+      setCurrentStageIndex(2); // GATHER EVIDENCE
+      await investigationsApi.start(investigationId);
+      setCurrentStageIndex(3); // DETECT PATTERNS
+
+      const result = await investigationsApi.result<
+        Record<string, unknown>
+      >(investigationId);
+      setCurrentStageIndex(4); // ASSESS RISK
+      setCurrentStageIndex(5); // ASSESS UNCERTAINTITY
+
+      const evidenceIds = Array.isArray(result?.evidence_ids)
+        ? (result.evidence_ids as string[])
+        : [];
+      const findings = Array.isArray(result?.findings)
+        ? (result.findings as unknown[])
+        : [];
+      const recommendations = Array.isArray(result?.recommendations)
+        ? (result.recommendations as unknown[])
+        : [];
+
+      setScanEvidenceIds(evidenceIds);
+      setScanFindings(findings);
+      setScanRecommendations(recommendations);
+      setScanInvestigationId(investigationId);
+      setScanRequiresEvidence(
+        result?.requires_additional_evidence === true,
+      );
+      setScanRequiredEvidence(
+        Array.isArray(result?.required_evidence)
+          ? (result.required_evidence as string[])
+          : [],
+      );
+
+      // The graph subgraph is a separate, real call; its size is reported
+      // as observed rather than asserted.
+      try {
+        const graph = await graphApi.investigation<
+          Record<string, unknown>
+        >(target, { depth: 2, limit: 100 });
+        setScanGraphNodeCount(
+          typeof graph?.node_count === "number" ? graph.node_count : null,
+        );
+        setScanGraphEdgeCount(
+          typeof graph?.edge_count === "number" ? graph.edge_count : null,
+        );
+      } catch {
+        setScanGraphNodeCount(null);
+        setScanGraphEdgeCount(null);
+      }
+
+      setCurrentStageIndex(6); // RECOMMEND ACTION
+      setHasScanned(true);
+      setTab(2);
+
+      onSuccessToast?.(
+        `Investigation ${investigationId} completed: ${findings.length} finding(s), ` +
+          `${evidenceIds.length} evidence item(s).`,
+      );
+    } catch (err) {
+      setHasScanned(false);
+      setScanError(
+        err instanceof Error
+          ? err.message
+          : "The investigation could not be started.",
+      );
+      onSuccessToast?.("Investigation failed — see the console for details.");
     } finally {
-      setTimeout(() => {
-        setIsEvaluating(false);
-        setHasScanned(true);
-        setCurrentStageIndex(6); // RECOMMEND ACTION
-        onSuccessToast?.("🤖 Autonomous Agent Consensus: 3-Hop Traversal Complete (89% Risk)");
-        setTab(2);
-      }, 1300);
+      setIsEvaluating(false);
     }
   };
 
@@ -414,7 +543,25 @@ export function ProtocolModal({
             <div className="p-3 bg-[#f7f4ea] border-[2px] border-black font-mono text-xs">
               <span className="font-bold block text-black mb-1">HISTORICAL CASE MEMORY:</span>
               <p className="text-neutral-700 leading-relaxed">
-                Vector similarity matched <strong>#FG-9082</strong> (Mule Convergence Syndicate, cosine similarity 0.94). Previous outcome: FinCEN SAR filed and accounts frozen.
+                {scanFindings.length > 0 ? (
+                  <ul className="space-y-1.5">
+                    {scanFindings.slice(0, 6).map((f, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <span className="font-black shrink-0">
+                          {String(i + 1).padStart(2, "0")}
+                        </span>
+                        <span>{findingText(f)}</span>
+                      </li>
+                    ))}
+                    {scanFindings.length > 6 ? (
+                      <li className="text-neutral-600">
+                        +{scanFindings.length - 6} more finding(s)
+                      </li>
+                    ) : null}
+                  </ul>
+                ) : (
+                  "The agent returned no findings for this target."
+                )}
               </p>
             </div>
 
@@ -442,21 +589,78 @@ export function ProtocolModal({
               </span>
             </div>
 
-            {/* Policy & Recommendation Card */}
-            <div className="bg-[#f7f4ea] border-[2.5px] border-black p-4 font-mono text-xs space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-neutral-600 uppercase">POLICY RULE:</span>
-                <span className="font-black text-black">RULE AML-R14 (High Velocity Mule Defense)</span>
+            {/* Investigation outcome and policy basis.
+                Every value below comes from the investigation the user ran.
+                When no investigation has been run yet, the panel says so
+                instead of asserting a policy rule and an action. */}
+            {hasScanned ? (
+              <div className="bg-[#f7f4ea] border-[2.5px] border-black p-4 font-mono text-xs space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-bold text-neutral-600 uppercase">
+                    INVESTIGATION:
+                  </span>
+                  <span className="font-black text-black break-all text-right">
+                    {scanInvestigationId ?? "—"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-bold text-neutral-600 uppercase">
+                    FINDINGS / EVIDENCE:
+                  </span>
+                  <span className="font-black text-black">
+                    {scanFindings.length} / {scanEvidenceIds.length}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-bold text-neutral-600 uppercase">
+                    GRAPH SUBGRAPH:
+                  </span>
+                  <span className="font-black text-black">
+                    {scanGraphNodeCount === null
+                      ? "unavailable"
+                      : `${scanGraphNodeCount} nodes / ${scanGraphEdgeCount ?? 0} edges`}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-bold text-neutral-600 uppercase">
+                    AGENT RECOMMENDATIONS:
+                  </span>
+                  <span className="font-black text-black text-right">
+                    {scanRecommendations.length === 0
+                      ? "none returned"
+                      : scanRecommendations
+                          .map(recommendationText)
+                          .join(", ")}
+                  </span>
+                </div>
+                {scanRequiresEvidence ? (
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="font-bold text-neutral-600 uppercase">
+                      EVIDENCE STILL REQUIRED:
+                    </span>
+                    <span className="font-black text-black text-right">
+                      {scanRequiredEvidence.join(", ")}
+                    </span>
+                  </div>
+                ) : null}
               </div>
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-neutral-600 uppercase">APPROVAL LEVEL:</span>
-                <span className="font-black text-red-600">L2 Compliance Officer Required</span>
+            ) : (
+              <div className="bg-[#f7f4ea] border-[2.5px] border-black p-4 font-mono text-xs">
+                <p className="font-bold uppercase text-black">
+                  No investigation run yet.
+                </p>
+                <p className="text-neutral-700 mt-1 leading-relaxed">
+                  Run an autonomous graph scan first. The policy rule, approval
+                  level and recommended action are then taken from the agent
+                  output rather than assumed.
+                </p>
+                {scanError ? (
+                  <p className="text-red-600 font-bold mt-2">
+                    Last run failed: {scanError}
+                  </p>
+                ) : null}
               </div>
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-neutral-600 uppercase">RECOMMENDED ACTION:</span>
-                <span className="font-black text-black">PROVISIONAL_FREEZE_24H</span>
-              </div>
-            </div>
+            )}
 
             {/* Action Triggers */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

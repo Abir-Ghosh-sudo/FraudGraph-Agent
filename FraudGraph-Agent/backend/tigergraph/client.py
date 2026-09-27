@@ -128,6 +128,66 @@ class TigerGraphClient:
             elapsed_ms=elapsed_ms,
         )
 
+    # ------------------------------------------------------------------
+    # Write operations
+    #
+    # GSQL runs on the GSQL port, not on REST++, so the host is used verbatim
+    # and the port is taken from the settings.
+    # ------------------------------------------------------------------
+    def _gsql_endpoint(self) -> str:
+        host = self.settings.tigergraph_host.rstrip("/")
+        if not host:
+            raise TigerGraphConfigurationError(
+                "TigerGraph host is not configured."
+            )
+        return f"{host}:{self.settings.tigergraph_gsql_port}"
+
+    def run_gsql(self, script: str) -> str:
+        """Execute a GSQL script and return its output."""
+        response = self._request(
+            "POST",
+            self._gsql_endpoint(),
+            params={"secret": self.settings.tigergraph_secret}
+            if self.settings.tigergraph_secret
+            else None,
+            json={"gsql": script},
+        )
+        data = response.data
+        if isinstance(data, dict):
+            return str(data.get("message", data))
+        return str(data)
+
+    def upsert_vertex(
+        self,
+        *,
+        vertex_type: str,
+        vertex_id: str,
+        attributes: dict[str, Any] | None = None,
+    ) -> TigerGraphResponse:
+        return self._request(
+            "POST",
+            f"graph/{self.graph_name}/vertices/{vertex_type}/{vertex_id}",
+            json=attributes or {},
+        )
+
+    def upsert_edge(
+        self,
+        *,
+        edge_type: str,
+        from_id: str,
+        to_id: str,
+        attributes: dict[str, Any] | None = None,
+    ) -> TigerGraphResponse:
+        return self._request(
+            "POST",
+            f"graph/{self.graph_name}/edges/{edge_type}",
+            json={
+                "from_id": from_id,
+                "to_id": to_id,
+                "attributes": attributes or {},
+            },
+        )
+
     @staticmethod
     def _extract_error(data: Any) -> str:
         if isinstance(data, dict):

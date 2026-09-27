@@ -346,4 +346,118 @@ def ingest_real_dataset(
     return results
 
 
-__all__ = ["IngestedCase", "ingest_real_dataset"]
+def ingest_case_pack(
+    *,
+    case_service: CaseService,
+    case_pack_csv: Path,
+) -> list[IngestedCase]:
+    """Create real cases from ``data/raw/case_pack.csv``.
+
+    The case pack is the 20 cases the task is scored on (HHG-001 .. HHG-020).
+    Each row already carries a real flagged transaction, card, customer, bank
+    risk score and trigger narrative, so a case is built verbatim rather than
+    invented. Findings come from the dataset's own M columns and the
+    transaction's measured fields.
+    """
+    if not case_pack_csv.is_file():
+        logger.warning("case pack missing", path=str(case_pack_csv))
+        return []
+
+    created: list[IngestedCase] = []
+
+    with case_pack_csv.open("r", encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            case_id = (row.get("case_id") or "").strip()
+            if not case_id:
+                continue
+
+            customer_id = (row.get("customer_id") or "").strip() or None
+            card_id = (row.get("card_id") or "").strip() or None
+            transaction_id = (row.get("flagged_txn_id") or "").strip() or None
+            trigger_type = (row.get("trigger_type") or "risk_score").strip()
+            narrative = (row.get("trigger_text") or "").strip()
+            bank_score = _as_float(row.get("risk_score"))
+
+            case = case_service.create(
+                CaseCreate(
+                    investigation_id=case_id,
+                    transaction_id=transaction_id,
+                    customer_id=customer_id,
+                    account_id=card_id,
+                    title=case_id,
+                    description=narrative or f"Case {case_id} from the case pack.",
+                )
+            )
+
+            # The case pack score is the bank's detection model output.
+            case.risk_score = bank_score
+            case.risk_level = (
+                _risk_level(bank_score) if bank_score is not None else RiskLevel.UNKNOWN
+            )
+            case.fraud_type = trigger_type
+            case.status = CaseStatus.OPEN
+
+            findings = 0
+            if card_id:
+                case_service.add_finding(
+                    case.case_id,
+                    title="Flagged card",
+                    description=(
+                        f"The case was raised against card {card_id}."
+                    ),
+                    evidence_ids=[],
+                    confidence=bank_score if bank_score is not None else 0.5,
+                )
+                findings += 1
+
+            if transaction_id:
+                case_service.add_finding(
+                    case.case_id,
+                    title="Flagged transaction",
+                    description=(
+                        f"Transaction {transaction_id} triggered the case "
+                        f"({trigger_type})."
+                    ),
+                    evidence_ids=[],
+                    confidence=bank_score if bank_score is not None else 0.5,
+                )
+                findings += 1
+
+            created.append(
+                IngestedCase(
+                    case_id=case.case_id,
+                    transaction_id=transaction_id or "",
+                    risk_score=bank_score if bank_score is not None else 0.0,
+                    risk_level=case.risk_level,
+                    ml_probability=bank_score if bank_score is not None else 0.0,
+                    evidence_count=0,
+                    finding_count=findings,
+                )
+            )
+
+            logger.info(
+                "ingested case-pack case",
+                case_id=case.case_id,
+                customer_id=customer_id,
+                transaction_id=transaction_id,
+                risk_level=str(case.risk_level),
+            )
+
+    return created
+
+
+def _as_float(value: Any) -> float | None:
+    text = ("" if value is None else str(value)).strip()
+    if not text or text.lower() in {"nan", "none", "null"}:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+__all__ = [
+    "IngestedCase",
+    "ingest_case_pack",
+    "ingest_real_dataset",
+]

@@ -304,6 +304,27 @@ export const investigationsApi = {
       payload,
     );
   },
+
+  /** Start the LangGraph workflow for an existing investigation. */
+  start<T = unknown>(investigationId: string): Promise<T> {
+    return api.post<T>(
+      `/investigations/${encodeURIComponent(investigationId)}/start`,
+    );
+  },
+
+  /** Agent output: findings, recommendations, evidence ids. */
+  result<T = unknown>(investigationId: string): Promise<T> {
+    return api.get<T>(
+      `/investigations/${encodeURIComponent(investigationId)}/result`,
+    );
+  },
+
+  /** Ordered agent stage events emitted during the run. */
+  events<T = unknown>(investigationId: string): Promise<T> {
+    return api.get<T>(
+      `/investigations/${encodeURIComponent(investigationId)}/events`,
+    );
+  },
 };
 
 /* -------------------------------------------------------------------------- */

@@ -43,12 +43,20 @@ logger = get_logger(__name__)
 
 # Columns pulled from transactions.csv. Kept small on purpose: the V-feature
 # block is only needed by the model, not by the graph.
+#
+# customer_id and the billing addresses ARE part of the dataset and must be
+# indexed, otherwise a customer id typed into the Graph Explorer resolves to
+# nothing even though the ledger contains it.
 _TRANSACTION_COLUMNS = (
     "TransactionID",
     "TransactionAmt",
     "ProductCD",
+    "customer_id",
     "card1",
+    "addr1",
+    "addr2",
     "P_emaildomain",
+    "R_emaildomain",
 )
 
 _IDENTITY_COLUMNS = ("TransactionID", "DeviceInfo", "DeviceType")
@@ -246,7 +254,36 @@ class RelationalFraudGraph:
                             label=f"Card {card}",
                         )
                     )
-                    self._add_edge(card_node, tx_node, "used_in")
+                    self._add_edge(card_node, tx_node, "MADE")
+
+                # Customer id is a first-class entity in this dataset.
+                customer = (row.get("customer_id") or "").strip()
+                if customer:
+                    customer_node = self._add_vertex(
+                        _Vertex(
+                            node_id=f"U:{customer}",
+                            node_type="Customer",
+                            label=f"Customer {customer}",
+                        )
+                    )
+                    self._add_edge(customer_node, tx_node, "MADE")
+                    # A customer touching several cards is a real linkage
+                    # signal, emitted only when actually observed.
+                    if card:
+                        self._add_edge(customer_node, card_node, "OWNS")
+
+                for col, kind in (("addr1", "BillingAddress"), ("addr2", "BillingAddress")):
+                    address = (row.get(col) or "").strip()
+                    if not address:
+                        continue
+                    address_node = self._add_vertex(
+                        _Vertex(
+                            node_id=f"A:{col}:{address}",
+                            node_type="BillingRegion",
+                            label=f"{col} {address[:24]}",
+                        )
+                    )
+                    self._add_edge(address_node, tx_node, "BILLED_IN")
 
                 email = (row.get("P_emaildomain") or "").strip()
                 if email:
@@ -257,14 +294,14 @@ class RelationalFraudGraph:
                             label=email,
                         )
                     )
-                    self._add_edge(email_node, tx_node, "email_on")
+                    self._add_edge(email_node, tx_node, "PURCHASER_EMAIL")
 
                 if device_info and device_info.get("device_info"):
                     device_key = device_info["device_info"]
                     device_node = self._add_vertex(
                         _Vertex(
                             node_id=f"D:{device_key}",
-                            node_type="Device",
+                            node_type="DeviceProfile",
                             label=f"Device {device_key[:40]}",
                             properties={
                                 k: device_info.get(k)
@@ -273,11 +310,11 @@ class RelationalFraudGraph:
                             },
                         )
                     )
-                    self._add_edge(device_node, tx_node, "used_in")
+                    self._add_edge(device_node, tx_node, "FROM_DEVICE")
                     if card:
                         # Two cards on one device is the classic device-reuse
                         # signal; only emitted when actually observed.
-                        self._add_edge(card_node, device_node, "shares_device")
+                        self._add_edge(card_node, device_node, "SHARES_DEVICE")
 
         logger.info("relational graph ready", **self.stats())
 
@@ -285,13 +322,19 @@ class RelationalFraudGraph:
     # Traversal
     # ------------------------------------------------------------------
     def resolve_root(self, node_id: str) -> str | None:
-        """Accept a bare id (3000001 / 22563) or a typed id (C:22563)."""
+        """Accept a bare id (3000001 / 22563 / C06075) or a typed id (C:22563).
+
+        Customer ids in this dataset already begin with "C" (C06075), so a
+        bare "C06075" must resolve to the customer vertex rather than being
+        mistaken for a card. The typed form is tried first, then the raw value,
+        then the customer-prefixed form.
+        """
         candidate = node_id.strip()
         if not candidate:
             return None
         if candidate in self._vertices:
             return candidate
-        for prefix in ("T:", "C:", "D:", "E:"):
+        for prefix in ("T:", "U:", "C:", "D:", "E:", "A:addr1:", "A:addr2:"):
             if f"{prefix}{candidate}" in self._vertices:
                 return f"{prefix}{candidate}"
         return None

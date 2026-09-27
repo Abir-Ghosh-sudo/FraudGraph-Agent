@@ -55,9 +55,21 @@ def _maybe_start_ingest(settings: Settings) -> None:
     def _run() -> None:
         try:
             from backend.app.dependencies import get_application_context
-            from backend.app.ingest import ingest_real_dataset
+            from backend.app.ingest import (
+                ingest_case_pack,
+                ingest_real_dataset,
+            )
 
             ctx = get_application_context()
+
+            # The 20 scored cases (HHG-001..HHG-020) come first, straight
+            # from the published case pack.
+            case_pack = ingest_case_pack(
+                case_service=ctx.case_service,
+                case_pack_csv=settings.raw_data_dir / "case_pack.csv",
+            )
+            logger.info("case pack ingest finished", cases=len(case_pack))
+
             results = ingest_real_dataset(
                 case_service=ctx.case_service,
                 evidence_service=ctx.evidence_service,
