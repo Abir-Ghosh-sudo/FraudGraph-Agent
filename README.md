@@ -64,7 +64,8 @@ FraudGraph-Agent provides a visual investigation dashboard for monitoring:
 * Investigation history
 
 ### 📸 Dashboard Preview
-![Uploading image.png…]()
+
+<img width="1911" height="906" alt="image" src="https://github.com/user-attachments/assets/34c6948a-17b6-4c28-876d-a916edd54b29" />
 
 
 # 🎯 The Problem
